@@ -18,9 +18,9 @@ const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
 const RESTITUTION_COEFFICIENT: f32 = 0.2;
 const FRICTION_COEFFICIENT: f32 = 0.7;
 
-const PARTICLE_SIZE: f32 = 4.0;
-const NUM_PARTICLES_X: i32 = 50;
-const NUM_PARTICLES_Y: i32 = 50;
+const PARTICLE_SIZE: f32 = 2.0;
+const NUM_PARTICLES_X: i32 = 32;
+const NUM_PARTICLES_Y: i32 = 32;
 const PARTICLES_DX: f32 = 4.0;
 const PARTICLES_DY: f32 = 4.0;
 const PARTICLE_MASS: f32 = 10.0;
@@ -142,7 +142,11 @@ impl Fluid {
                 //     j as f32 / NUM_PARTICLES_Y as f32,
                 // );
                 let particle = Particle {
-                    position: Vec3::new(i as f32 * PARTICLES_DX - hx, j as f32 * PARTICLES_DY - hy, 0.0),
+                    position: Vec3::new(
+                        i as f32 * PARTICLES_DX - hx,
+                        j as f32 * PARTICLES_DY - hy,
+                        0.0,
+                    ),
                     velocity: Vec3::ZERO,
                     mass: PARTICLE_MASS,
                     density: INITIAL_DENSITY,
@@ -183,7 +187,6 @@ impl Fluid {
             particle.velocity = velocity;
             particle.position += velocity * dt;
 
-
             let mut collision_normal = Vec3::ZERO;
             if particle.position.x < WALL_X_MIN {
                 collision_normal = Vec3::X;
@@ -209,7 +212,6 @@ impl Fluid {
                 particle.velocity = -RESTITUTION_COEFFICIENT * velocity_normal
                     + (1.0 - FRICTION_COEFFICIENT) * velocity_tangential;
             }
-
         }
     }
 
@@ -229,13 +231,18 @@ impl Fluid {
         }
     }
 
-    fn get_balls(&self) -> [Vec4; 128] {
-        let mut balls = [Vec4::ZERO; 128];
+    fn get_balls(&self) -> [Vec4; 1024] {
+        let mut balls = [Vec4::ZERO; 1024];
         for (i, particle) in self.particles.iter().map(|p| p.position).enumerate() {
-            if i >= 128 {
+            if i >= 1024 {
                 break;
             }
-            balls[i] = Vec4::new(particle.x, particle.y, 0.0, 0.0);
+            balls[i] = Vec4::new(
+                particle.x,
+                particle.y,
+                0.0,
+                0.0,
+            );
         }
         balls
     }
@@ -248,10 +255,13 @@ pub struct FluidMaterial {
     #[uniform(1)]
     radius: f32,
     #[uniform(2)]
-    balls: [Vec4; 128],
+    balls: [Vec4; 1024],
 }
 
 impl Material2d for FluidMaterial {
+    // fn vertex_shader() -> ShaderRef {
+    //     "shaders/metaball.wgsl".into()
+    // }
     fn fragment_shader() -> ShaderRef {
         "shaders/metaball.wgsl".into()
     }
@@ -275,7 +285,7 @@ fn init_fluid(
                 WALL_Y_MAX - WALL_Y_MIN,
             ))),
             material: materials.add(FluidMaterial {
-                color: Color::ALICE_BLUE,
+                color: Color::BLUE,
                 radius: PARTICLE_SIZE,
                 balls: balls,
             }),
@@ -301,7 +311,7 @@ fn update_fluid(
         gizmos.circle_2d(
             Vec2::new(particle.position.x, particle.position.y),
             1.,
-            Color::WHITE,
+            Color::rgba(1.0, 1.0, 1.0, 0.01)
         );
     }
 
@@ -323,6 +333,11 @@ fn update_interactive(
     fluid.set_external_force(Vec3::ZERO, Vec3::ZERO);
     for motion in motion_er.read() {
         let window: &Window = window_query.single();
+
+        // let width = window.resolution.width();
+        // let height = window.resolution.height();
+        // println!("w {} h {}", width, height);
+
         if let Some(cursor_position) = window.cursor_position() {
             if let Some(world_position) =
                 camera.viewport_to_world_2d(camera_transform, cursor_position)
