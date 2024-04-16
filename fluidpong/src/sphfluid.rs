@@ -2,7 +2,7 @@ use bevy::{
     input::mouse::MouseMotion,
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef},
-    sprite::{Material2d, MaterialMesh2dBundle, Mesh2dHandle},
+    sprite::{Material2dPlugin, Material2d, MaterialMesh2dBundle, Mesh2dHandle},
     utils::HashMap,
     window::PrimaryWindow,
 };
@@ -35,7 +35,8 @@ pub struct SPHFluidPlugin;
 
 impl Plugin for SPHFluidPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, init_fluid)
+        app.add_plugins(Material2dPlugin::<MetaballMaterial>::default())
+            .add_systems(Startup, init_fluid)
             .add_systems(Update, (update_interactive, update_fluid).chain());
     }
 }
@@ -232,7 +233,12 @@ impl SPHFluid {
             if i >= 1024 {
                 break;
             }
-            balls[i] = Vec4::new(particle.position.x, particle.position.y, particle.density, particle.velocity.length());
+            balls[i] = Vec4::new(
+                particle.position.x,
+                particle.position.y,
+                particle.density,
+                particle.velocity.length(),
+            );
         }
         balls
     }
@@ -266,7 +272,6 @@ fn init_fluid(
     let balls = fluid.get_balls();
     fluid.init();
 
-    commands.spawn(Camera2dBundle::default());
     commands.spawn((
         fluid,
         MaterialMesh2dBundle {

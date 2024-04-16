@@ -1,15 +1,9 @@
-use bevy::{
-    prelude::*,
-    sprite::Material2dPlugin
-};
+use bevy::prelude::*;
+pub mod pong;
 pub mod sphfluid;
 
 fn main() {
     App::new()
-        .add_plugins((
-            DefaultPlugins,
-            Material2dPlugin::<sphfluid::MetaballMaterial>::default(),
-            sphfluid::SPHFluidPlugin
-        ))
+        .add_plugins((DefaultPlugins, sphfluid::SPHFluidPlugin, pong::PongPlugin))
         .run();
 }
