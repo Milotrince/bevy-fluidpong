@@ -2,14 +2,14 @@ use bevy::{
     prelude::*,
     sprite::Material2dPlugin
 };
-pub mod fluid;
+pub mod sphfluid;
 
 fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
-            Material2dPlugin::<fluid::FluidMaterial>::default(),
-            fluid::FluidPlugin
+            Material2dPlugin::<sphfluid::MetaballMaterial>::default(),
+            sphfluid::SPHFluidPlugin
         ))
         .run();
 }

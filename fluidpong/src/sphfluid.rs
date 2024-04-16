@@ -9,7 +9,7 @@ use bevy::{
 use std::{f32::consts::PI, path};
 
 const INITIAL_DENSITY: f32 = 100.0;
-const SMOOTHING_LENGTH: f32 = 0.5;
+const SMOOTHING_LENGTH: f32 = 4.0;
 const VISCOSITY_COEFFICIENT: f32 = 0.0001;
 const INTERACT_FORCE: f32 = 4000.0;
 const INTERACT_RADIUS: f32 = 6.0;
@@ -31,9 +31,9 @@ const WALL_X_MAX: f32 = 100.0;
 const WALL_Y_MIN: f32 = -100.0;
 const WALL_Y_MAX: f32 = 100.0;
 
-pub struct FluidPlugin;
+pub struct SPHFluidPlugin;
 
-impl Plugin for FluidPlugin {
+impl Plugin for SPHFluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, init_fluid)
             .add_systems(Update, (update_interactive, update_fluid).chain());
@@ -118,14 +118,14 @@ impl SpatialGrid {
 }
 
 #[derive(Component)]
-struct Fluid {
+struct SPHFluid {
     particles: Vec<Particle>,
     grid: SpatialGrid,
 }
 
-impl Fluid {
+impl SPHFluid {
     fn new() -> Self {
-        Fluid {
+        SPHFluid {
             particles: Vec::new(),
             grid: SpatialGrid::new(),
         }
@@ -232,14 +232,14 @@ impl Fluid {
             if i >= 1024 {
                 break;
             }
-            balls[i] = Vec4::new(particle.position.x, particle.position.y, 0.0, particle.velocity.length());
+            balls[i] = Vec4::new(particle.position.x, particle.position.y, particle.density, particle.velocity.length());
         }
         balls
     }
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-pub struct FluidMaterial {
+pub struct MetaballMaterial {
     #[uniform(0)]
     color: Color,
     #[uniform(1)]
@@ -248,7 +248,7 @@ pub struct FluidMaterial {
     balls: [Vec4; 1024],
 }
 
-impl Material2d for FluidMaterial {
+impl Material2d for MetaballMaterial {
     // fn vertex_shader() -> ShaderRef {
     //     "shaders/metaball.wgsl".into()
     // }
@@ -260,9 +260,9 @@ impl Material2d for FluidMaterial {
 fn init_fluid(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<FluidMaterial>>,
+    mut materials: ResMut<Assets<MetaballMaterial>>,
 ) {
-    let mut fluid: Fluid = Fluid::new();
+    let mut fluid: SPHFluid = SPHFluid::new();
     let balls = fluid.get_balls();
     fluid.init();
 
@@ -274,7 +274,7 @@ fn init_fluid(
                 WALL_X_MAX - WALL_X_MIN,
                 WALL_Y_MAX - WALL_Y_MIN,
             ))),
-            material: materials.add(FluidMaterial {
+            material: materials.add(MetaballMaterial {
                 color: Color::BLUE,
                 radius: PARTICLE_SIZE,
                 balls: balls,
@@ -287,8 +287,8 @@ fn init_fluid(
 
 fn update_fluid(
     time: Res<Time>,
-    mut query: Query<(&mut Fluid, &mut Handle<FluidMaterial>)>,
-    mut materials: ResMut<Assets<FluidMaterial>>,
+    mut query: Query<(&mut SPHFluid, &mut Handle<MetaballMaterial>)>,
+    mut materials: ResMut<Assets<MetaballMaterial>>,
     mut gizmos: Gizmos,
 ) {
     let dt: f32 = time.delta_seconds();
@@ -314,7 +314,7 @@ fn update_interactive(
     camera_query: Query<(&Camera, &GlobalTransform)>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut motion_er: EventReader<MouseMotion>,
-    mut query: Query<&mut Fluid>,
+    mut query: Query<&mut SPHFluid>,
     mut gizmos: Gizmos,
 ) {
     let (camera, camera_transform) = camera_query.single();
