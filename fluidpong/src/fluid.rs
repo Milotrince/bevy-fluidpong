@@ -11,9 +11,9 @@ use std::{f32::consts::PI, path};
 const INITIAL_DENSITY: f32 = 100.0;
 const SMOOTHING_LENGTH: f32 = 0.5;
 const VISCOSITY_COEFFICIENT: f32 = 0.0001;
-const INTERACT_FORCE: f32 = 1000.0;
+const INTERACT_FORCE: f32 = 4000.0;
 const INTERACT_RADIUS: f32 = 6.0;
-const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
+// const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
 
 const RESTITUTION_COEFFICIENT: f32 = 0.2;
 const FRICTION_COEFFICIENT: f32 = 0.7;
@@ -136,11 +136,6 @@ impl Fluid {
         let hy: f32 = PARTICLES_DY * NUM_PARTICLES_Y as f32 / 2.0;
         for i in 1..NUM_PARTICLES_X {
             for j in 1..NUM_PARTICLES_Y {
-                // let color: Color = Color::rgb(
-                //     i as f32 / NUM_PARTICLES_X as f32,
-                //     0.0,
-                //     j as f32 / NUM_PARTICLES_Y as f32,
-                // );
                 let particle = Particle {
                     position: Vec3::new(
                         i as f32 * PARTICLES_DX - hx,
@@ -233,16 +228,11 @@ impl Fluid {
 
     fn get_balls(&self) -> [Vec4; 1024] {
         let mut balls = [Vec4::ZERO; 1024];
-        for (i, particle) in self.particles.iter().map(|p| p.position).enumerate() {
+        for (i, particle) in self.particles.iter().enumerate() {
             if i >= 1024 {
                 break;
             }
-            balls[i] = Vec4::new(
-                particle.x,
-                particle.y,
-                0.0,
-                0.0,
-            );
+            balls[i] = Vec4::new(particle.position.x, particle.position.y, 0.0, particle.velocity.length());
         }
         balls
     }
@@ -307,13 +297,13 @@ fn update_fluid(
     fluid.update_grid();
 
     // DEBUG
-    for particle in fluid.particles.iter() {
-        gizmos.circle_2d(
-            Vec2::new(particle.position.x, particle.position.y),
-            1.,
-            Color::rgba(1.0, 1.0, 1.0, 0.01)
-        );
-    }
+    // for particle in fluid.particles.iter() {
+    //     gizmos.circle_2d(
+    //         Vec2::new(particle.position.x, particle.position.y),
+    //         1.,
+    //         Color::rgba(1.0, 1.0, 1.0, 0.01)
+    //     );
+    // }
 
     if let Some(material) = materials.get_mut(&*handle) {
         material.balls = fluid.get_balls();
