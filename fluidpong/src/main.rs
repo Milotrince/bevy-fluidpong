@@ -1,11 +1,14 @@
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    sprite::Material2dPlugin
+};
 pub mod fluid;
 
 fn main() {
     App::new()
-        .insert_resource(fluid::SpatialGrid::new())
         .add_plugins((
             DefaultPlugins,
+            Material2dPlugin::<fluid::FluidMaterial>::default(),
             fluid::FluidPlugin
         ))
         .run();

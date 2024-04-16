@@ -1,7 +1,8 @@
 use bevy::{
     input::mouse::MouseMotion,
     prelude::*,
-    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
+    render::render_resource::{AsBindGroup, ShaderRef},
+    sprite::{Material2d, MaterialMesh2dBundle, Mesh2dHandle},
     utils::HashMap,
     window::PrimaryWindow,
 };
@@ -11,6 +12,7 @@ const INITIAL_DENSITY: f32 = 0.5;
 const SMOOTHING_LENGTH: f32 = 0.5;
 const VISCOSITY_COEFFICIENT: f32 = 10.0;
 const INTERACT_FORCE: f32 = 5.0;
+const INTERACT_RADIUS: f32 = 2.0;
 const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
 
 const RESTITUTION_COEFFICIENT: f32 = 0.8;
@@ -38,28 +40,35 @@ impl Plugin for FluidPlugin {
             (
                 update_fluid,
                 update_interactive,
-                update_positions,
-                update_spatial_grid,
             )
                 .chain(),
         );
     }
 }
 
-#[derive(Component)]
 struct Particle {
     position: Vec3,
     velocity: Vec3,
     mass: f32,
     density: f32,
     pressure: Vec3,
-    force: Vec3,
-    color: Color,
+    ext_force: Vec3,
 }
 
-#[derive(Resource)]
+impl Particle {
+    fn to_cell(&self) -> Cell {
+        return Cell { position: self.position, mass: self.mass };
+    }
+}
+
+#[derive(Copy, Clone)]
+struct Cell {
+    position: Vec3,
+    mass: f32
+}
+
 pub struct SpatialGrid {
-    cells: HashMap<(i32, i32, i32), Vec<Entity>>,
+    cells: HashMap<(i32, i32, i32), Vec<Cell>>,
 }
 
 impl SpatialGrid {
@@ -79,16 +88,19 @@ impl SpatialGrid {
         }
     }
 
-    pub fn insert(&mut self, entity: Entity, position: Vec3) {
+    pub fn insert(&mut self, cell: Cell) {
         let key = (
-            (position.x / GRID_CELL_SIZE).floor() as i32,
-            (position.y / GRID_CELL_SIZE).floor() as i32,
-            (position.z / GRID_CELL_SIZE).floor() as i32,
+            (cell.position.x / GRID_CELL_SIZE).floor() as i32,
+            (cell.position.y / GRID_CELL_SIZE).floor() as i32,
+            (cell.position.z / GRID_CELL_SIZE).floor() as i32,
         );
-        self.cells.entry(key).or_insert_with(Vec::new).push(entity);
+        self.cells
+            .entry(key)
+            .or_insert_with(Vec::new)
+            .push(cell);
     }
 
-    pub fn get_neighbors(&self, position: Vec3) -> Vec<Entity> {
+    pub fn get_neighbors(&self, position: Vec3) -> Vec<Cell> {
         let mut neighbors = Vec::new();
         let key = (
             (position.x / GRID_CELL_SIZE).floor() as i32,
@@ -97,111 +109,79 @@ impl SpatialGrid {
         );
         for offset in Self::NEIGHBOR_OFFSETS.iter() {
             let neighbor_key = (key.0 + offset.0, key.1 + offset.1, key.2 + offset.2);
-            if let Some(entities) = self.cells.get(&neighbor_key) {
-                neighbors.extend(entities.iter().copied());
+            if let Some(cells) = self.cells.get(&neighbor_key) {
+                for cell in cells.iter() {
+                    neighbors.push(*cell);
+                }
             }
         }
         neighbors
     }
+
+    // fn get_balls(self) -> Vec<Vec3> {
+    //     self.particles.iter().map(|p| p.position).collect()
+    // }
 
     pub fn clear(&mut self) {
         self.cells.clear();
     }
 }
 
-fn init_fluid(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut grid: ResMut<SpatialGrid>,
-) {
-    commands.spawn(Camera2dBundle::default());
-
-    for i in 1..NUM_PARTICLES_X {
-        for j in 1..NUM_PARTICLES_Y {
-            let color: Color = Color::rgb(
-                i as f32 / NUM_PARTICLES_X as f32,
-                0.0,
-                j as f32 / NUM_PARTICLES_Y as f32,
-            );
-            let position: Vec3 = Vec3::new(i as f32 * PARTICLES_DX, j as f32 * PARTICLES_DY, 0.0);
-            let entity = commands
-                .spawn((
-                    Particle {
-                        position: position,
-                        velocity: Vec3::new(0.0, 0.0, 0.0),
-                        mass: PARTICLE_MASS,
-                        density: INITIAL_DENSITY,
-                        pressure: Vec3::new(0.0, 0.0, 0.0),
-                        force: Vec3::new(0.0, 0.0, 0.0),
-                        color: color,
-                    },
-                    MaterialMesh2dBundle {
-                        mesh: Mesh2dHandle(meshes.add(Circle { radius: PARTICLE_SIZE })),
-                        material: materials.add(color),
-                        transform: Transform::from_translation(position),
-                        ..default()
-                    },
-                ))
-                .id();
-            grid.insert(entity, position)
-        }
-    }
+#[derive(Component)]
+struct Fluid {
+    particles: Vec<Particle>,
+    grid: SpatialGrid,
 }
 
-fn update_fluid(
-    time: Res<Time>,
-    grid: Res<SpatialGrid>,
-    mut query: Query<(Entity, &mut Particle)>,
-) {
-    let dt = time.delta_seconds();
-    let particle_data: Vec<(Entity, Vec3, f32)> = query
-        .iter_mut()
-        .map(|(e, p)| (e, p.position, p.mass))
-        .collect();
+impl Fluid {
+    fn new() -> Self {
+        Fluid {
+            particles: Vec::new(),
+            grid: SpatialGrid::new(),
+        }
+    }
 
-    let mut density_updates = Vec::new();
-    let mut force_updates = Vec::new();
-
-    for (entity, position, _) in particle_data.iter() {
-        let mut density = 0.0;
-        let mut pressure = Vec3::ZERO;
-        let mut force = Vec3::ZERO;
-
-        let neighbors = grid.get_neighbors(*position);
-        for neighbor_entity in &neighbors {
-            if let Some((_, neighbor_position, neighbor_mass)) =
-                particle_data.iter().find(|(e, _, _)| e == neighbor_entity)
-            {
-                let r = *position - *neighbor_position;
-                let distance = r.length();
-                if 0.0 < distance && distance < SMOOTHING_LENGTH {
-                    density += neighbor_mass * poly6_kernel(distance, SMOOTHING_LENGTH);
-                    let grad_w = grad_poly6_kernel(r, SMOOTHING_LENGTH);
-                    let lap_w = laplacian_viscosity_kernel(r, SMOOTHING_LENGTH);
-                    pressure += -(neighbor_mass) * (grad_w / neighbor_mass.powi(2));
-                    force += VISCOSITY_COEFFICIENT * (neighbor_mass) * (lap_w);
-                }
+    fn init(&mut self) {
+        for i in 1..NUM_PARTICLES_X {
+            for j in 1..NUM_PARTICLES_Y {
+                // let color: Color = Color::rgb(
+                //     i as f32 / NUM_PARTICLES_X as f32,
+                //     0.0,
+                //     j as f32 / NUM_PARTICLES_Y as f32,
+                // );
+                let particle = Particle {
+                    position: Vec3::new(i as f32 * PARTICLES_DX, j as f32 * PARTICLES_DY, 0.0),
+                    velocity: Vec3::ZERO,
+                    mass: PARTICLE_MASS,
+                    density: INITIAL_DENSITY,
+                    pressure: Vec3::ZERO,
+                    ext_force: Vec3::ZERO,
+                };
+                let cell = particle.to_cell();
+                self.particles.push(particle);
+                self.grid.insert(cell);
             }
         }
-
-        density_updates.push((entity, density));
-        force_updates.push((entity, pressure, force));
     }
 
-    for (entity, new_density) in density_updates {
-        if let Ok((_, mut particle)) = query.get_mut(*entity) {
-            particle.density = new_density;
-        }
-    }
+    fn update_particle_forces(&mut self, dt: f32) {
+        for particle in self.particles.iter_mut() {
+            let mut density = 0.0;
+            let mut pressure = Vec3::ZERO;
+            let mut force = Vec3::ZERO;
 
-    for (entity, new_pressure, new_force) in force_updates {
-        if let Ok((_, mut particle)) = query.get_mut(*entity) {
-            particle.pressure = new_pressure;
-            particle.force = new_force;
-
-            let acceleration = (new_pressure + new_force) / particle.mass;
-            particle.velocity += acceleration * dt;
+            let neighbors = self.grid.get_neighbors(particle.position);
+            for neighbor in neighbors.iter() {
+                let r = particle.position - neighbor.position;
+                let distance = r.length();
+                if 0.0 < distance && distance < SMOOTHING_LENGTH {
+                    density += neighbor.mass * poly6_kernel(distance, SMOOTHING_LENGTH);
+                    let grad_w = grad_poly6_kernel(r, SMOOTHING_LENGTH);
+                    let lap_w = laplacian_viscosity_kernel(r, SMOOTHING_LENGTH);
+                    pressure += -(neighbor.mass) * (grad_w / neighbor.mass.powi(2));
+                    force += VISCOSITY_COEFFICIENT * (neighbor.mass) * (lap_w);
+                }
+            }
 
             let mut collision_normal = Vec3::ZERO;
             if particle.position.x < WALL_X_MIN {
@@ -220,19 +200,129 @@ fn update_fluid(
                 collision_normal = -Vec3::Y;
                 particle.position.y = WALL_Y_MAX;
             }
+
             if collision_normal != Vec3::ZERO {
                 let velocity_normal = particle.velocity.dot(collision_normal) * collision_normal;
                 let velocity_tangential = particle.velocity - velocity_normal;
-    
-                particle.velocity = -RESTITUTION_COEFFICIENT * velocity_normal + (1.0 - FRICTION_COEFFICIENT) * velocity_tangential;
+
+                particle.velocity = -RESTITUTION_COEFFICIENT * velocity_normal
+                    + (1.0 - FRICTION_COEFFICIENT) * velocity_tangential;
             }
 
-            let vel = particle.velocity;
-            particle.position += vel * dt;
+            let acceleration = (pressure + force + particle.ext_force) / particle.mass;
+            let velocity = particle.velocity + acceleration * dt;
 
+            particle.density = density;
+            particle.pressure = pressure;
+            particle.velocity = velocity;
+            particle.position += velocity * dt;
+        }
+    }
+
+    fn update_grid(&mut self) {
+        self.grid.clear();
+        for particle in self.particles.iter() {
+            self.grid.insert(particle.to_cell());
+        }
+    }
+
+    fn set_external_force(&mut self, point: Vec3, force: Vec3) {
+        for particle in self.particles.iter_mut() {
+            let distance: f32 = particle.position.distance(point);
+            particle.ext_force = force / distance.powi(2)
+        }
+    }
+
+    fn get_balls(&self) -> Vec<Vec3> {
+        self.particles.iter().map(|p| p.position).collect()
+    }
+}
+
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+pub struct FluidMaterial {
+    // #[uniform(0)]
+    color: Color,
+    // #[storage(1)]
+    balls: Vec<Vec3>,
+    // #[uniform(2)]
+    radius: f32,
+}
+
+impl Material2d for FluidMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/metaball.wgsl".into()
+    }
+}
+
+fn init_fluid(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<FluidMaterial>>,
+) {
+    let mut fluid: Fluid = Fluid::new();
+    let balls = fluid.get_balls();
+    fluid.init();
+
+    commands.spawn(Camera2dBundle::default());
+    commands.spawn((
+        fluid,
+        MaterialMesh2dBundle {
+            mesh: Mesh2dHandle(meshes.add(Rectangle::new(
+                WALL_X_MAX - WALL_X_MIN,
+                WALL_Y_MAX - WALL_Y_MIN,
+            ))),
+            material: materials.add(FluidMaterial {
+                color: Color::ALICE_BLUE,
+                balls: balls,
+                radius: PARTICLE_SIZE,
+            }),
+            transform: Transform::from_translation(Vec3::ZERO),
+            ..default()
+        },
+    ));
+}
+
+fn update_fluid(time: Res<Time>, mut query: Query<(&mut Fluid, &mut Handle<FluidMaterial>)>, mut materials: ResMut<Assets<FluidMaterial>>) {
+    let dt: f32 = time.delta_seconds();
+    let (mut fluid, mut handle)  = query.single_mut();
+    fluid.update_particle_forces(dt);
+    fluid.update_grid();
+
+    let material = materials.get_mut(&*handle);
+    if let Some(mut material) = materials.get_mut(&*handle) {
+        material.balls = fluid.get_balls();
+    }
+}
+
+
+fn update_interactive(
+    camera_query: Query<(&Camera, &GlobalTransform)>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut motion_er: EventReader<MouseMotion>,
+    mut query: Query<&mut Fluid>,
+    mut gizmos: Gizmos,
+) {
+    let (camera, camera_transform) = camera_query.single();
+
+    for motion in motion_er.read() {
+        let window: &Window = window_query.single();
+        if let Some(cursor_position) = window.cursor_position() {
+            if let Some(world_position) =
+                camera.viewport_to_world_2d(camera_transform, cursor_position)
+            {
+                gizmos.circle_2d(world_position, 10., Color::WHITE);
+
+                let point = Vec3::new(world_position.x, world_position.y, 0.0);
+                let force = Vec3::new(motion.delta.x, motion.delta.y, 0.0);
+
+                let mut fluid = query.single_mut();
+                fluid.set_external_force(point, force * INTERACT_FORCE);
+            }
         }
     }
 }
+
+
 
 fn poly6_kernel(r: f32, h: f32) -> f32 {
     if r > h {
@@ -262,59 +352,4 @@ fn laplacian_viscosity_kernel(r: Vec3, h: f32) -> f32 {
         return coefficient * (h - r_length);
     }
     0.0
-}
-
-fn update_positions(mut query: Query<(&mut Transform, &Particle)>) {
-    for (mut transform, particle) in query.iter_mut() {
-        transform.translation = particle.position;
-    }
-}
-
-fn update_interactive(
-    time: Res<Time>,
-    camera_query: Query<(&Camera, &GlobalTransform)>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    mut motion_er: EventReader<MouseMotion>,
-    grid: Res<SpatialGrid>,
-    mut query: Query<&mut Particle>,
-    mut gizmos: Gizmos,
-) {
-    let dt = time.delta_seconds();
-    let (camera, camera_transform) = camera_query.single();
-
-    for motion in motion_er.read() {
-        let window: &Window = window_query.single();
-        if let Some(cursor_position) = window.cursor_position() {
-            if let Some(world_position2) =
-                camera.viewport_to_world_2d(camera_transform, cursor_position)
-            {
-                // println!(
-                //     "Mouse moved: X: {} px, Y: {} px",
-                //     motion.delta.x, motion.delta.y
-                // );
-                let world_position = Vec3::new(world_position2.x, world_position2.y, 0.0);
-                gizmos.circle_2d(world_position2, 10., Color::WHITE);
-
-                // affect nearby particles
-                let neighbor_entities: Vec<Entity> = grid.get_neighbors(world_position);
-                for neighbor_entity in neighbor_entities {
-                    if let Ok(mut particle) = query.get_mut(neighbor_entity) {
-                        let direction = (particle.position - world_position).normalize();
-                        let force = direction * INTERACT_FORCE;
-                        particle.velocity += force;
-                        let vel = particle.velocity;
-                        particle.position += vel * dt;
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn update_spatial_grid(mut grid: ResMut<SpatialGrid>, query: Query<(Entity, &Transform)>) {
-    grid.clear();
-
-    for (entity, transform) in query.iter() {
-        grid.insert(entity, transform.translation);
-    }
 }
