@@ -9,7 +9,7 @@ var<uniform> metaballs: array<vec4<f32>, 1024>;
 // array strides must be multiple of 16. 
 // metaball.x : x position
 // metaball.y : y position
-// metaball.z : 
+// metaball.z : density
 // metaball.w : velocity magnitude
 
 fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
@@ -27,8 +27,11 @@ fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+    var threshold: f32 = 0.4;
+
     var pos: vec2<f32> = mesh.world_position.xy;
     var sum: f32 = 0.0;
+    var density_sum: f32 = 0.0;
     var speed_sum: f32 = 0.0;
 
     for (var i = 0; i < 1024; i++) {
@@ -38,15 +41,19 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
             let dist = distance(pos, vec2(ball.x, ball.y));
             let influence = radius / (dist * dist + 1.0);
             sum += influence;
+            density_sum += ball.z / (dist + 1.0) / 6.0;
             speed_sum += ball.w / (dist + 1.0);
         }
     }
 
-    let opacity = clamp(sum, 0.0, 1.0);
+    let opacity = clamp(density_sum, 0.2, 1.0);
     let h = clamp(speed_sum / 1024.0, 0.0, 1.0);
     
     let colorhsv: vec3<f32> = vec3(h, 1.0, 0.5);
-
-    return vec4<f32>(hsv2rgb(colorhsv), opacity);
+    if (sum > threshold) {
+        return vec4<f32>(hsv2rgb(colorhsv), opacity);
+    } else {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
     
 }
