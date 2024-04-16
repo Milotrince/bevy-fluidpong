@@ -8,23 +8,23 @@ use bevy::{
 };
 use std::{f32::consts::PI, path};
 
-const INITIAL_DENSITY: f32 = 0.5;
+const INITIAL_DENSITY: f32 = 100.0;
 const SMOOTHING_LENGTH: f32 = 0.5;
-const VISCOSITY_COEFFICIENT: f32 = 10.0;
-const INTERACT_FORCE: f32 = 5.0;
-const INTERACT_RADIUS: f32 = 2.0;
+const VISCOSITY_COEFFICIENT: f32 = 0.0001;
+const INTERACT_FORCE: f32 = 1000.0;
+const INTERACT_RADIUS: f32 = 6.0;
 const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
 
-const RESTITUTION_COEFFICIENT: f32 = 0.8;
-const FRICTION_COEFFICIENT: f32 = 0.5;
+const RESTITUTION_COEFFICIENT: f32 = 0.2;
+const FRICTION_COEFFICIENT: f32 = 0.7;
 
 const PARTICLE_SIZE: f32 = 4.0;
-const NUM_PARTICLES_X: i32 = 10;
-const NUM_PARTICLES_Y: i32 = 10;
+const NUM_PARTICLES_X: i32 = 50;
+const NUM_PARTICLES_Y: i32 = 50;
 const PARTICLES_DX: f32 = 4.0;
 const PARTICLES_DY: f32 = 4.0;
-const PARTICLE_MASS: f32 = 100.0;
-const GRID_CELL_SIZE: f32 = 1000.0;
+const PARTICLE_MASS: f32 = 10.0;
+const GRID_CELL_SIZE: f32 = 5.0;
 
 const WALL_X_MIN: f32 = -100.0;
 const WALL_X_MAX: f32 = 100.0;
@@ -35,14 +35,8 @@ pub struct FluidPlugin;
 
 impl Plugin for FluidPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, init_fluid).add_systems(
-            Update,
-            (
-                update_fluid,
-                update_interactive,
-            )
-                .chain(),
-        );
+        app.add_systems(Startup, init_fluid)
+            .add_systems(Update, (update_interactive, update_fluid).chain());
     }
 }
 
@@ -57,14 +51,17 @@ struct Particle {
 
 impl Particle {
     fn to_cell(&self) -> Cell {
-        return Cell { position: self.position, mass: self.mass };
+        return Cell {
+            position: self.position,
+            mass: self.mass,
+        };
     }
 }
 
 #[derive(Copy, Clone)]
 struct Cell {
     position: Vec3,
-    mass: f32
+    mass: f32,
 }
 
 pub struct SpatialGrid {
@@ -94,10 +91,7 @@ impl SpatialGrid {
             (cell.position.y / GRID_CELL_SIZE).floor() as i32,
             (cell.position.z / GRID_CELL_SIZE).floor() as i32,
         );
-        self.cells
-            .entry(key)
-            .or_insert_with(Vec::new)
-            .push(cell);
+        self.cells.entry(key).or_insert_with(Vec::new).push(cell);
     }
 
     pub fn get_neighbors(&self, position: Vec3) -> Vec<Cell> {
@@ -117,10 +111,6 @@ impl SpatialGrid {
         }
         neighbors
     }
-
-    // fn get_balls(self) -> Vec<Vec3> {
-    //     self.particles.iter().map(|p| p.position).collect()
-    // }
 
     pub fn clear(&mut self) {
         self.cells.clear();
@@ -142,6 +132,8 @@ impl Fluid {
     }
 
     fn init(&mut self) {
+        let hx: f32 = PARTICLES_DX * NUM_PARTICLES_X as f32 / 2.0;
+        let hy: f32 = PARTICLES_DY * NUM_PARTICLES_Y as f32 / 2.0;
         for i in 1..NUM_PARTICLES_X {
             for j in 1..NUM_PARTICLES_Y {
                 // let color: Color = Color::rgb(
@@ -150,7 +142,7 @@ impl Fluid {
                 //     j as f32 / NUM_PARTICLES_Y as f32,
                 // );
                 let particle = Particle {
-                    position: Vec3::new(i as f32 * PARTICLES_DX, j as f32 * PARTICLES_DY, 0.0),
+                    position: Vec3::new(i as f32 * PARTICLES_DX - hx, j as f32 * PARTICLES_DY - hy, 0.0),
                     velocity: Vec3::ZERO,
                     mass: PARTICLE_MASS,
                     density: INITIAL_DENSITY,
@@ -183,6 +175,15 @@ impl Fluid {
                 }
             }
 
+            let acceleration = (pressure + force + particle.ext_force) / particle.mass;
+            let velocity = particle.velocity + acceleration * dt;
+
+            particle.density = density;
+            particle.pressure = pressure;
+            particle.velocity = velocity;
+            particle.position += velocity * dt;
+
+
             let mut collision_normal = Vec3::ZERO;
             if particle.position.x < WALL_X_MIN {
                 collision_normal = Vec3::X;
@@ -209,13 +210,6 @@ impl Fluid {
                     + (1.0 - FRICTION_COEFFICIENT) * velocity_tangential;
             }
 
-            let acceleration = (pressure + force + particle.ext_force) / particle.mass;
-            let velocity = particle.velocity + acceleration * dt;
-
-            particle.density = density;
-            particle.pressure = pressure;
-            particle.velocity = velocity;
-            particle.position += velocity * dt;
         }
     }
 
@@ -227,25 +221,34 @@ impl Fluid {
     }
 
     fn set_external_force(&mut self, point: Vec3, force: Vec3) {
+        let scale = 1.0 / INTERACT_RADIUS;
         for particle in self.particles.iter_mut() {
             let distance: f32 = particle.position.distance(point);
-            particle.ext_force = force / distance.powi(2)
+            let logistic_response = 1.0 / (1.0 + f32::exp(-scale * (INTERACT_RADIUS - distance)));
+            particle.ext_force = force * INTERACT_FORCE * logistic_response;
         }
     }
 
-    fn get_balls(&self) -> Vec<Vec3> {
-        self.particles.iter().map(|p| p.position).collect()
+    fn get_balls(&self) -> [Vec4; 128] {
+        let mut balls = [Vec4::ZERO; 128];
+        for (i, particle) in self.particles.iter().map(|p| p.position).enumerate() {
+            if i >= 128 {
+                break;
+            }
+            balls[i] = Vec4::new(particle.x, particle.y, 0.0, 0.0);
+        }
+        balls
     }
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct FluidMaterial {
-    // #[uniform(0)]
+    #[uniform(0)]
     color: Color,
-    // #[storage(1)]
-    balls: Vec<Vec3>,
-    // #[uniform(2)]
+    #[uniform(1)]
     radius: f32,
+    #[uniform(2)]
+    balls: [Vec4; 128],
 }
 
 impl Material2d for FluidMaterial {
@@ -273,8 +276,8 @@ fn init_fluid(
             ))),
             material: materials.add(FluidMaterial {
                 color: Color::ALICE_BLUE,
-                balls: balls,
                 radius: PARTICLE_SIZE,
+                balls: balls,
             }),
             transform: Transform::from_translation(Vec3::ZERO),
             ..default()
@@ -282,18 +285,30 @@ fn init_fluid(
     ));
 }
 
-fn update_fluid(time: Res<Time>, mut query: Query<(&mut Fluid, &mut Handle<FluidMaterial>)>, mut materials: ResMut<Assets<FluidMaterial>>) {
+fn update_fluid(
+    time: Res<Time>,
+    mut query: Query<(&mut Fluid, &mut Handle<FluidMaterial>)>,
+    mut materials: ResMut<Assets<FluidMaterial>>,
+    mut gizmos: Gizmos,
+) {
     let dt: f32 = time.delta_seconds();
-    let (mut fluid, mut handle)  = query.single_mut();
+    let (mut fluid, mut handle) = query.single_mut();
     fluid.update_particle_forces(dt);
     fluid.update_grid();
 
-    let material = materials.get_mut(&*handle);
-    if let Some(mut material) = materials.get_mut(&*handle) {
+    // DEBUG
+    for particle in fluid.particles.iter() {
+        gizmos.circle_2d(
+            Vec2::new(particle.position.x, particle.position.y),
+            1.,
+            Color::WHITE,
+        );
+    }
+
+    if let Some(material) = materials.get_mut(&*handle) {
         material.balls = fluid.get_balls();
     }
 }
-
 
 fn update_interactive(
     camera_query: Query<(&Camera, &GlobalTransform)>,
@@ -304,6 +319,8 @@ fn update_interactive(
 ) {
     let (camera, camera_transform) = camera_query.single();
 
+    let mut fluid = query.single_mut();
+    fluid.set_external_force(Vec3::ZERO, Vec3::ZERO);
     for motion in motion_er.read() {
         let window: &Window = window_query.single();
         if let Some(cursor_position) = window.cursor_position() {
@@ -313,16 +330,13 @@ fn update_interactive(
                 gizmos.circle_2d(world_position, 10., Color::WHITE);
 
                 let point = Vec3::new(world_position.x, world_position.y, 0.0);
-                let force = Vec3::new(motion.delta.x, motion.delta.y, 0.0);
+                let force = Vec3::new(motion.delta.x, -motion.delta.y, 0.0);
 
-                let mut fluid = query.single_mut();
-                fluid.set_external_force(point, force * INTERACT_FORCE);
+                fluid.set_external_force(point, force);
             }
         }
     }
 }
-
-
 
 fn poly6_kernel(r: f32, h: f32) -> f32 {
     if r > h {
