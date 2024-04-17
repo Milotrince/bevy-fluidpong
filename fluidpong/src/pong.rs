@@ -128,7 +128,6 @@ impl Plugin for PongPlugin {
                 Startup,
                 (
                     spawn_ball,
-                    spawn_camera,
                     spawn_paddles,
                     spawn_gutters,
                     spawn_scoreboard,
@@ -140,7 +139,6 @@ impl Plugin for PongPlugin {
                     move_ball,
                     handle_player_input,
                     detect_scoring,
-                    move_ai,
                     reset_ball.after(detect_scoring),
                     update_score.after(detect_scoring),
                     update_scoreboard.after(update_score),
@@ -152,17 +150,6 @@ impl Plugin for PongPlugin {
     }
 }
 
-fn move_ai(
-    mut ai: Query<(&mut Velocity, &Position), With<Player2>>,
-    ball: Query<&Position, With<Ball>>,
-) {
-    if let Ok((mut velocity, position)) = ai.get_single_mut() {
-        if let Ok(ball_position) = ball.get_single() {
-            let a_to_b = ball_position.0 - position.0;
-            velocity.0.y = a_to_b.y.signum();
-        }
-    }
-}
 
 fn update_scoreboard(
     mut player1_score: Query<&mut Text, With<Player1Score>>,
@@ -269,9 +256,19 @@ fn reset_ball(
 
 fn handle_player_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut paddle: Query<&mut Velocity, With<Player1>>,
+    mut paddle1: Query<&mut Velocity, With<Player1>>,
+    mut paddle2: Query<&mut Velocity, With<Player1>>,
 ) {
-    if let Ok(mut velocity) = paddle.get_single_mut() {
+    if let Ok(mut velocity) = paddle1.get_single_mut() {
+        if keyboard_input.pressed(KeyCode::KeyW) {
+            velocity.0.y = 1.;
+        } else if keyboard_input.pressed(KeyCode::KeyS) {
+            velocity.0.y = -1.;
+        } else {
+            velocity.0.y = 0.;
+        }
+    }
+    if let Ok(mut velocity) = paddle2.get_single_mut() {
         if keyboard_input.pressed(KeyCode::ArrowUp) {
             velocity.0.y = 1.;
         } else if keyboard_input.pressed(KeyCode::ArrowDown) {
@@ -461,8 +458,4 @@ fn spawn_ball(
             ..default()
         },
     ));
-}
-
-fn spawn_camera(mut commands: Commands) {
-    commands.spawn_empty().insert(Camera2dBundle::default());
 }

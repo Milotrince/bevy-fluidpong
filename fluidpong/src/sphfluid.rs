@@ -11,7 +11,7 @@ use std::{f32::consts::PI, path};
 const INITIAL_DENSITY: f32 = 100.0;
 const SMOOTHING_LENGTH: f32 = 4.0;
 const VISCOSITY_COEFFICIENT: f32 = 0.0001;
-const INTERACT_FORCE: f32 = 4000.0;
+const INTERACT_FORCE: f32 = 2000.0;
 const INTERACT_RADIUS: f32 = 6.0;
 // const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
 
@@ -19,17 +19,25 @@ const RESTITUTION_COEFFICIENT: f32 = 0.2;
 const FRICTION_COEFFICIENT: f32 = 0.7;
 
 const PARTICLE_SIZE: f32 = 2.0;
-const NUM_PARTICLES_X: i32 = 32;
-const NUM_PARTICLES_Y: i32 = 32;
+const NUM_PARTICLES_X: u32 = 32; //64;
+const NUM_PARTICLES_Y: u32 = 32; //64;
+const NUM_PARTICLES: usize = (NUM_PARTICLES_X * NUM_PARTICLES_Y) as usize;
+
 const PARTICLES_DX: f32 = 4.0;
 const PARTICLES_DY: f32 = 4.0;
 const PARTICLE_MASS: f32 = 10.0;
-const GRID_CELL_SIZE: f32 = 5.0;
+const GRID_CELL_SIZE: f32 = 10.0;
 
-const WALL_X_MIN: f32 = -100.0;
-const WALL_X_MAX: f32 = 100.0;
-const WALL_Y_MIN: f32 = -100.0;
-const WALL_Y_MAX: f32 = 100.0;
+// use smaller when testing
+const WALL_X_MIN: f32 = -300.0;
+const WALL_X_MAX: f32 = 300.0;
+const WALL_Y_MIN: f32 = -200.0;
+const WALL_Y_MAX: f32 = 200.0;
+// below match dimensions of pong
+// const WALL_X_MIN: f32 = -640.0;
+// const WALL_X_MAX: f32 = 640.0;
+// const WALL_Y_MIN: f32 = -264.0;
+// const WALL_Y_MAX: f32 = 264.0;
 
 pub struct SPHFluidPlugin;
 
@@ -66,18 +74,16 @@ struct Cell {
 }
 
 pub struct SpatialGrid {
-    cells: HashMap<(i32, i32, i32), Vec<Cell>>,
+    cells: HashMap<(i32, i32), Vec<Cell>>,
 }
 
 impl SpatialGrid {
-    const NEIGHBOR_OFFSETS: [(i32, i32, i32); 7] = [
-        (0, 0, 0),
-        (-1, 0, 0),
-        (1, 0, 0),
-        (0, -1, 0),
-        (0, 1, 0),
-        (0, 0, -1),
-        (0, 0, 1),
+    const NEIGHBOR_OFFSETS: [(i32, i32); 5] = [
+        (0, 0),
+        (-1, 0),
+        (1, 0),
+        (0, -1),
+        (0, 1),
     ];
 
     pub fn new() -> Self {
@@ -90,7 +96,6 @@ impl SpatialGrid {
         let key = (
             (cell.position.x / GRID_CELL_SIZE).floor() as i32,
             (cell.position.y / GRID_CELL_SIZE).floor() as i32,
-            (cell.position.z / GRID_CELL_SIZE).floor() as i32,
         );
         self.cells.entry(key).or_insert_with(Vec::new).push(cell);
     }
@@ -100,10 +105,9 @@ impl SpatialGrid {
         let key = (
             (position.x / GRID_CELL_SIZE).floor() as i32,
             (position.y / GRID_CELL_SIZE).floor() as i32,
-            (position.z / GRID_CELL_SIZE).floor() as i32,
         );
         for offset in Self::NEIGHBOR_OFFSETS.iter() {
-            let neighbor_key = (key.0 + offset.0, key.1 + offset.1, key.2 + offset.2);
+            let neighbor_key = (key.0 + offset.0, key.1 + offset.1);
             if let Some(cells) = self.cells.get(&neighbor_key) {
                 for cell in cells.iter() {
                     neighbors.push(*cell);
@@ -227,10 +231,10 @@ impl SPHFluid {
         }
     }
 
-    fn get_balls(&self) -> [Vec4; 1024] {
-        let mut balls = [Vec4::ZERO; 1024];
+    fn get_balls(&self) -> [Vec4; NUM_PARTICLES] {
+        let mut balls = [Vec4::ZERO; NUM_PARTICLES];
         for (i, particle) in self.particles.iter().enumerate() {
-            if i >= 1024 {
+            if i >= NUM_PARTICLES {
                 break;
             }
             balls[i] = Vec4::new(
@@ -251,7 +255,7 @@ pub struct MetaballMaterial {
     #[uniform(1)]
     radius: f32,
     #[uniform(2)]
-    balls: [Vec4; 1024],
+    balls: [Vec4; NUM_PARTICLES],
 }
 
 impl Material2d for MetaballMaterial {
@@ -328,10 +332,6 @@ fn update_interactive(
     fluid.set_external_force(Vec3::ZERO, Vec3::ZERO);
     for motion in motion_er.read() {
         let window: &Window = window_query.single();
-
-        // let width = window.resolution.width();
-        // let height = window.resolution.height();
-        // println!("w {} h {}", width, height);
 
         if let Some(cursor_position) = window.cursor_position() {
             if let Some(world_position) =
