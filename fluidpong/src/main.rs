@@ -1,18 +1,25 @@
 use bevy::prelude::*;
 pub mod pong;
 pub mod sphfluid;
+pub mod fluidpong;
 
 fn main() {
     App::new()
-        .add_systems(Startup, spawn_camera)
+        .add_systems(Startup, (spawn_camera, resize_window))
         .add_plugins((
             DefaultPlugins,
-            sphfluid::SPHFluidPlugin,
+            // COMMENT/UNCOMMENT FOR WHAT YOU ARE WORKING ON
+            // sphfluid::SPHFluidPlugin,
             // pong::PongPlugin
+            fluidpong::FluidPongPlugin,
         ))
         .run();
 }
 
 fn spawn_camera(mut commands: Commands) {
     commands.spawn_empty().insert(Camera2dBundle::default());
+}
+fn resize_window(mut windows: Query<&mut Window>) {
+    let mut window = windows.single_mut();
+    window.resolution.set(640.0, 480.0);
 }
