@@ -1,22 +1,23 @@
+use crate::lib::text_input;
 use bevy::{
+    input::keyboard::KeyboardInput,
     input::mouse::MouseMotion,
+    input::ButtonState,
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef},
-    sprite::{Material2dPlugin, Material2d, MaterialMesh2dBundle, Mesh2dHandle},
+    sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle, Mesh2dHandle},
     utils::HashMap,
     window::PrimaryWindow,
 };
-use std::{f32::consts::PI, path};
+use std::f32::consts::PI;
 
 const INITIAL_DENSITY: f32 = 100.0;
-const SMOOTHING_LENGTH: f32 = 4.0;
-const VISCOSITY_COEFFICIENT: f32 = 0.0001;
-const INTERACT_FORCE: f32 = 2000.0;
-const INTERACT_RADIUS: f32 = 6.0;
-// const GRAVITY: Vec3 = Vec3::new(0.0, -9.81, 0.0);
-
-const RESTITUTION_COEFFICIENT: f32 = 0.2;
-const FRICTION_COEFFICIENT: f32 = 0.7;
+#[derive(Component, Clone)]
+pub struct FluidSimVars {
+    map: HashMap<String, f32>,
+    initialized: bool,
+    paused: bool,
+}
 
 const PARTICLE_SIZE: f32 = 2.0;
 const NUM_PARTICLES_X: u32 = 32; //64;
@@ -29,15 +30,8 @@ const PARTICLE_MASS: f32 = 10.0;
 const GRID_CELL_SIZE: f32 = 10.0;
 
 // use smaller when testing
-const WALL_X_MIN: f32 = -300.0;
-const WALL_X_MAX: f32 = 300.0;
-const WALL_Y_MIN: f32 = -200.0;
-const WALL_Y_MAX: f32 = 200.0;
-// below match dimensions of pong
-// const WALL_X_MIN: f32 = -640.0;
-// const WALL_X_MAX: f32 = 640.0;
-// const WALL_Y_MIN: f32 = -264.0;
-// const WALL_Y_MAX: f32 = 264.0;
+static WALL_X: f32 = 200.0;
+static WALL_Y: f32 = 200.0;
 
 pub struct SPHFluidPlugin;
 
@@ -45,7 +39,10 @@ impl Plugin for SPHFluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<MetaballMaterial>::default())
             .add_systems(Startup, init_fluid)
-            .add_systems(Update, (update_interactive, update_fluid).chain());
+            .add_systems(
+                Update,
+                (update_simvars, update_interactive, update_fluid).chain(),
+            );
     }
 }
 
@@ -62,6 +59,7 @@ impl Particle {
     fn to_cell(&self) -> Cell {
         return Cell {
             position: self.position,
+            velocity: self.velocity,
             mass: self.mass,
         };
     }
@@ -70,6 +68,7 @@ impl Particle {
 #[derive(Copy, Clone)]
 struct Cell {
     position: Vec3,
+    velocity: Vec3,
     mass: f32,
 }
 
@@ -78,13 +77,7 @@ pub struct SpatialGrid {
 }
 
 impl SpatialGrid {
-    const NEIGHBOR_OFFSETS: [(i32, i32); 5] = [
-        (0, 0),
-        (-1, 0),
-        (1, 0),
-        (0, -1),
-        (0, 1),
-    ];
+    const NEIGHBOR_OFFSETS: [(i32, i32); 5] = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)];
 
     pub fn new() -> Self {
         SpatialGrid {
@@ -137,6 +130,8 @@ impl SPHFluid {
     }
 
     fn init(&mut self) {
+        self.particles = Vec::new();
+        self.grid = SpatialGrid::new();
         let hx: f32 = PARTICLES_DX * NUM_PARTICLES_X as f32 / 2.0;
         let hy: f32 = PARTICLES_DY * NUM_PARTICLES_Y as f32 / 2.0;
         for i in 1..NUM_PARTICLES_X {
@@ -160,57 +155,86 @@ impl SPHFluid {
         }
     }
 
-    fn update_particle_forces(&mut self, dt: f32) {
-        for particle in self.particles.iter_mut() {
-            let mut density = 0.0;
-            let mut pressure = Vec3::ZERO;
-            let mut force = Vec3::ZERO;
+    fn update_particle_forces(&mut self, dt: f32, simvars: &FluidSimVars) {
+        if let (
+            Some(threshold_radius),
+            Some(smoothing_radius),
+            Some(viscosity),
+            Some(pressure_coeff),
+            Some(wall_x),
+            Some(wall_y),
+            Some(restitution),
+            Some(friction),
+            Some(gravity),
+            Some(sim_speed),
+        ) = (
+            simvars.map.get("threshold_radius"),
+            simvars.map.get("smoothing_radius"),
+            simvars.map.get("viscosity"),
+            simvars.map.get("pressure"),
+            simvars.map.get("wall_x"),
+            simvars.map.get("wall_y"),
+            simvars.map.get("restitution"),
+            simvars.map.get("friction"),
+            simvars.map.get("gravity"),
+            simvars.map.get("sim_speed"),
+        ) {
+            let dt = dt * sim_speed;
+            for particle in self.particles.iter_mut() {
+                let mut density = 0.0;
+                let mut pressure_force = Vec3::ZERO;
+                let mut viscosity_force = Vec3::ZERO;
 
-            let neighbors = self.grid.get_neighbors(particle.position);
-            for neighbor in neighbors.iter() {
-                let r = particle.position - neighbor.position;
-                let distance = r.length();
-                if 0.0 < distance && distance < SMOOTHING_LENGTH {
-                    density += neighbor.mass * poly6_kernel(distance, SMOOTHING_LENGTH);
-                    let grad_w = grad_poly6_kernel(r, SMOOTHING_LENGTH);
-                    let lap_w = laplacian_viscosity_kernel(r, SMOOTHING_LENGTH);
-                    pressure += -(neighbor.mass) * (grad_w / neighbor.mass.powi(2));
-                    force += VISCOSITY_COEFFICIENT * (neighbor.mass) * (lap_w);
+                let neighbors = self.grid.get_neighbors(particle.position);
+                for neighbor in neighbors.iter() {
+                    let r = particle.position - neighbor.position;
+                    let distance = r.length();
+                    if distance < *threshold_radius {
+                        density += neighbor.mass * poly6_kernel(distance, *threshold_radius);
+                        let grad_w = grad_poly6_kernel(r, *threshold_radius);
+                        // let lap_w = viscosity_kernel(r, *dist_threshold);
+                        pressure_force +=
+                            pressure_coeff * (neighbor.mass) * (grad_w / neighbor.mass.powi(2));
+                        viscosity_force += *viscosity * viscosity_kernel(distance, *smoothing_radius) * (neighbor.velocity - particle.velocity);
+                    }
                 }
-            }
 
-            let acceleration = (pressure + force + particle.ext_force) / particle.mass;
-            let velocity = particle.velocity + acceleration * dt;
+                let acceleration =
+                    (pressure_force + viscosity_force + particle.ext_force + Vec3::new(0.0, -gravity, 0.0))
+                        / particle.mass;
+                let velocity = particle.velocity + acceleration * dt;
 
-            particle.density = density;
-            particle.pressure = pressure;
-            particle.velocity = velocity;
-            particle.position += velocity * dt;
+                particle.density = density;
+                particle.pressure = pressure_force;
+                particle.velocity = velocity;
+                particle.position += velocity * dt;
 
-            let mut collision_normal = Vec3::ZERO;
-            if particle.position.x < WALL_X_MIN {
-                collision_normal = Vec3::X;
-                particle.position.x = WALL_X_MIN;
-            }
-            if particle.position.x > WALL_X_MAX {
-                collision_normal = -Vec3::X;
-                particle.position.x = WALL_X_MAX;
-            }
-            if particle.position.y < WALL_Y_MIN {
-                collision_normal = Vec3::Y;
-                particle.position.y = WALL_Y_MIN;
-            }
-            if particle.position.y > WALL_Y_MAX {
-                collision_normal = -Vec3::Y;
-                particle.position.y = WALL_Y_MAX;
-            }
+                let mut collision_normal = Vec3::ZERO;
+                if particle.position.x < -wall_x {
+                    collision_normal = Vec3::X;
+                    particle.position.x = -wall_x;
+                }
+                if particle.position.x > *wall_x {
+                    collision_normal = -Vec3::X;
+                    particle.position.x = *wall_x;
+                }
+                if particle.position.y < -wall_y {
+                    collision_normal = Vec3::Y;
+                    particle.position.y = -wall_y;
+                }
+                if particle.position.y > *wall_y {
+                    collision_normal = -Vec3::Y;
+                    particle.position.y = *wall_y;
+                }
 
-            if collision_normal != Vec3::ZERO {
-                let velocity_normal = particle.velocity.dot(collision_normal) * collision_normal;
-                let velocity_tangential = particle.velocity - velocity_normal;
+                if collision_normal != Vec3::ZERO {
+                    let velocity_normal =
+                        particle.velocity.dot(collision_normal) * collision_normal;
+                    let velocity_tangential = particle.velocity - velocity_normal;
 
-                particle.velocity = -RESTITUTION_COEFFICIENT * velocity_normal
-                    + (1.0 - FRICTION_COEFFICIENT) * velocity_tangential;
+                    particle.velocity =
+                        -restitution * velocity_normal + (1.0 - friction) * velocity_tangential;
+                }
             }
         }
     }
@@ -223,11 +247,10 @@ impl SPHFluid {
     }
 
     fn set_external_force(&mut self, point: Vec3, force: Vec3) {
-        let scale = 1.0 / INTERACT_RADIUS;
         for particle in self.particles.iter_mut() {
             let distance: f32 = particle.position.distance(point);
-            let logistic_response = 1.0 / (1.0 + f32::exp(-scale * (INTERACT_RADIUS - distance)));
-            particle.ext_force = force * INTERACT_FORCE * logistic_response;
+            let logistic_response = 1.0 / (1.0 + f32::exp(1.0 + distance));
+            particle.ext_force = force * logistic_response;
         }
     }
 
@@ -259,9 +282,6 @@ pub struct MetaballMaterial {
 }
 
 impl Material2d for MetaballMaterial {
-    // fn vertex_shader() -> ShaderRef {
-    //     "shaders/metaball.wgsl".into()
-    // }
     fn fragment_shader() -> ShaderRef {
         "shaders/metaball.wgsl".into()
     }
@@ -275,14 +295,27 @@ fn init_fluid(
     let mut fluid: SPHFluid = SPHFluid::new();
     let balls = fluid.get_balls();
     fluid.init();
+    let simvars = FluidSimVars {
+        initialized: false,
+        paused: false,
+        map: HashMap::from([
+            ("gravity".to_string(), 0.0),
+            ("restitution".to_string(), 0.0),
+            ("friction".to_string(), 0.0),
+            ("viscosity".to_string(), 0.0),
+            ("interact_force".to_string(), 0.0),
+            ("interact_radius".to_string(), 0.0),
+            ("dist_threshold".to_string(), 0.0),
+            ("wall_x".to_string(), 0.0),
+            ("wall_y".to_string(), 0.0),
+        ]),
+    };
 
     commands.spawn((
         fluid,
+        simvars,
         MaterialMesh2dBundle {
-            mesh: Mesh2dHandle(meshes.add(Rectangle::new(
-                WALL_X_MAX - WALL_X_MIN,
-                WALL_Y_MAX - WALL_Y_MIN,
-            ))),
+            mesh: Mesh2dHandle(meshes.add(Rectangle::new(WALL_X * 2.0, WALL_Y * 2.0))),
             material: materials.add(MetaballMaterial {
                 color: Color::BLUE,
                 radius: PARTICLE_SIZE,
@@ -296,26 +329,28 @@ fn init_fluid(
 
 fn update_fluid(
     time: Res<Time>,
-    mut query: Query<(&mut SPHFluid, &mut Handle<MetaballMaterial>)>,
+    mut query: Query<(&mut SPHFluid, &mut Handle<MetaballMaterial>, &FluidSimVars)>,
     mut materials: ResMut<Assets<MetaballMaterial>>,
     mut gizmos: Gizmos,
 ) {
-    let dt: f32 = time.delta_seconds();
-    let (mut fluid, mut handle) = query.single_mut();
-    fluid.update_particle_forces(dt);
-    fluid.update_grid();
+    let (mut fluid, mut handle, simvars) = query.single_mut();
+    if !simvars.paused {
+        let dt: f32 = time.delta_seconds();
+        fluid.update_particle_forces(dt, simvars);
+        fluid.update_grid();
+
+        if let Some(material) = materials.get_mut(&*handle) {
+            material.balls = fluid.get_balls();
+        }
+    }
 
     // DEBUG
-    // for particle in fluid.particles.iter() {
-    //     gizmos.circle_2d(
-    //         Vec2::new(particle.position.x, particle.position.y),
-    //         1.,
-    //         Color::rgba(1.0, 1.0, 1.0, 0.01)
-    //     );
-    // }
-
-    if let Some(material) = materials.get_mut(&*handle) {
-        material.balls = fluid.get_balls();
+    for particle in fluid.particles.iter() {
+        gizmos.circle_2d(
+            Vec2::new(particle.position.x, particle.position.y),
+            1.,
+            Color::rgba(1.0, 1.0, 1.0, 1.00),
+        );
     }
 }
 
@@ -323,12 +358,12 @@ fn update_interactive(
     camera_query: Query<(&Camera, &GlobalTransform)>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut motion_er: EventReader<MouseMotion>,
-    mut query: Query<&mut SPHFluid>,
+    mut query: Query<(&mut SPHFluid, &FluidSimVars)>,
     mut gizmos: Gizmos,
 ) {
     let (camera, camera_transform) = camera_query.single();
 
-    let mut fluid = query.single_mut();
+    let (mut fluid, simvars) = query.single_mut();
     fluid.set_external_force(Vec3::ZERO, Vec3::ZERO);
     for motion in motion_er.read() {
         let window: &Window = window_query.single();
@@ -341,9 +376,43 @@ fn update_interactive(
 
                 let point = Vec3::new(world_position.x, world_position.y, 0.0);
                 let force = Vec3::new(motion.delta.x, -motion.delta.y, 0.0);
-
-                fluid.set_external_force(point, force);
+                if let Some(force_coeff) = simvars.map.get("interact_force") {
+                    fluid.set_external_force(point, force * *force_coeff);
+                }
             }
+        }
+    }
+}
+
+fn update_simvars(
+    mut key_evr: EventReader<KeyboardInput>,
+    mut fluidquery: Query<(&mut FluidSimVars, &mut SPHFluid)>,
+    query: Query<(&crate::simui::SimVariable, &text_input::TextInputValue)>,
+) {
+    let (mut simvars, mut fluid) = fluidquery.single_mut();
+    let mut do_update = false;
+    for ev in key_evr.read() {
+        if ev.state == ButtonState::Released {
+            if ev.key_code == KeyCode::Enter {
+                do_update = true;
+            }
+            if ev.key_code == KeyCode::KeyP {
+                simvars.paused = !simvars.paused;
+            }
+            if ev.key_code == KeyCode::KeyR {
+                fluid.init();
+            }
+        }
+    }
+    if !simvars.initialized {
+        do_update = true;
+        simvars.initialized = true;
+    }
+    if do_update {
+        for (simvar, input) in query.iter() {
+            let value = input.0.parse::<f32>().unwrap_or(0.0);
+            simvars.map.insert(simvar.name.clone(), value);
+            println!("updating {} to {}", simvar.name.clone(), value);
         }
     }
 }
@@ -352,7 +421,8 @@ fn poly6_kernel(r: f32, h: f32) -> f32 {
     if r > h {
         0.0
     } else {
-        let coefficient = 315.0 / (64.0 * PI * h.powi(9));
+        // let coefficient = 315.0 / (64.0 * PI * h.powi(9));
+        let coefficient = 1.0;
         let h2_r2 = h * h - r * r;
         coefficient * h2_r2.powi(3)
     }
@@ -361,7 +431,8 @@ fn poly6_kernel(r: f32, h: f32) -> f32 {
 fn grad_poly6_kernel(r: Vec3, h: f32) -> Vec3 {
     let r_length = r.length();
     if r_length < h && r_length != 0.0 {
-        let coefficient = -945.0 / (32.0 * std::f32::consts::PI * h.powi(9));
+        // let coefficient = -945.0 / (32.0 * std::f32::consts::PI * h.powi(9));
+        let coefficient = 1.0;
         let h2_r2 = h * h - r_length * r_length;
         let factor = coefficient * h2_r2.powi(2);
         return r * factor;
@@ -369,11 +440,13 @@ fn grad_poly6_kernel(r: Vec3, h: f32) -> Vec3 {
     Vec3::ZERO
 }
 
-fn laplacian_viscosity_kernel(r: Vec3, h: f32) -> f32 {
-    let r_length = r.length();
-    if r_length < h {
-        let coefficient = 45.0 / (std::f32::consts::PI * h.powi(6));
-        return coefficient * (h - r_length);
+fn viscosity_kernel(r: f32, h: f32) -> f32 {
+    if r < h {
+        // let coefficient = 45.0 / (std::f32::consts::PI * h.powi(6));
+        // return coefficient * (h - r_length);
+        let coefficient = 1.0;
+        let h2_r2 = h * h - r * r;
+        return h2_r2.powi(3);
     }
     0.0
 }
