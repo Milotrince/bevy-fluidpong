@@ -66,7 +66,7 @@ impl Particle {
 }
 
 #[derive(Copy, Clone)]
-struct Cell {
+pub struct Cell {
     position: Vec3,
     velocity: Vec3,
     mass: f32,
@@ -195,13 +195,17 @@ impl SPHFluid {
                         // let lap_w = viscosity_kernel(r, *dist_threshold);
                         pressure_force +=
                             pressure_coeff * (neighbor.mass) * (grad_w / neighbor.mass.powi(2));
-                        viscosity_force += *viscosity * viscosity_kernel(distance, *smoothing_radius) * (neighbor.velocity - particle.velocity);
+                        viscosity_force += *viscosity
+                            * viscosity_kernel(distance, *smoothing_radius)
+                            * (neighbor.velocity - particle.velocity);
                     }
                 }
 
-                let acceleration =
-                    (pressure_force + viscosity_force + particle.ext_force + Vec3::new(0.0, -gravity, 0.0))
-                        / particle.mass;
+                let acceleration = (pressure_force
+                    + viscosity_force
+                    + particle.ext_force
+                    + Vec3::new(0.0, -gravity, 0.0))
+                    / particle.mass;
                 let velocity = particle.velocity + acceleration * dt;
 
                 particle.density = density;
