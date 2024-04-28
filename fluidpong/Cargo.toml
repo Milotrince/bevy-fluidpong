@@ -9,3 +9,8 @@ edition = "2021"
 bevy = "0.13"
 enum_dispatch = "0.3.13"
 
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
