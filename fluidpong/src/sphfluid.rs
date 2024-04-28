@@ -1,7 +1,8 @@
 use crate::lib::text_input;
+use crate::simui;
 use bevy::{
     input::keyboard::KeyboardInput,
-    input::mouse::MouseMotion,
+    input::mouse::{MouseButtonInput, MouseMotion},
     input::ButtonState,
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef},
@@ -9,15 +10,8 @@ use bevy::{
     utils::HashMap,
     window::PrimaryWindow,
 };
-use std::f32::consts::PI;
 
 const INITIAL_DENSITY: f32 = 100.0;
-#[derive(Component, Clone)]
-pub struct FluidSimVars {
-    map: HashMap<String, f32>,
-    initialized: bool,
-    paused: bool,
-}
 
 const PARTICLE_SIZE: f32 = 2.0;
 const NUM_PARTICLES_X: u32 = 32; //64;
@@ -155,90 +149,77 @@ impl SPHFluid {
         }
     }
 
-    fn update_particle_forces(&mut self, dt: f32, simvars: &FluidSimVars) {
-        if let (
-            Some(threshold_radius),
-            Some(smoothing_radius),
-            Some(viscosity),
-            Some(pressure_coeff),
-            Some(wall_x),
-            Some(wall_y),
-            Some(restitution),
-            Some(friction),
-            Some(gravity),
-            Some(sim_speed),
-        ) = (
-            simvars.map.get("threshold_radius"),
-            simvars.map.get("smoothing_radius"),
-            simvars.map.get("viscosity"),
-            simvars.map.get("pressure"),
-            simvars.map.get("wall_x"),
-            simvars.map.get("wall_y"),
-            simvars.map.get("restitution"),
-            simvars.map.get("friction"),
-            simvars.map.get("gravity"),
-            simvars.map.get("sim_speed"),
-        ) {
-            let dt = dt * sim_speed;
-            for particle in self.particles.iter_mut() {
-                let mut density = 0.0;
-                let mut pressure_force = Vec3::ZERO;
-                let mut viscosity_force = Vec3::ZERO;
+    fn update_particle_forces(&mut self, dt: f32, simvars: &simui::FluidSimVars) {
+        // should these be moved as struct vars?
+        let threshold_radius = simvars.get("threshold_radius");
+        let smoothing_radius = simvars.get("smoothing_radius");
+        let viscosity = simvars.get("viscosity");
+        let pressure_coeff = simvars.get("pressure");
+        let wall_x = simvars.get("wall_x");
+        let wall_y = simvars.get("wall_y");
+        let restitution = simvars.get("restitution");
+        let friction = simvars.get("friction");
+        let gravity = simvars.get("gravity");
+        let sim_speed = simvars.get("sim_speed");
 
-                let neighbors = self.grid.get_neighbors(particle.position);
-                for neighbor in neighbors.iter() {
-                    let r = particle.position - neighbor.position;
-                    let distance = r.length();
-                    if distance < *threshold_radius {
-                        density += neighbor.mass * poly6_kernel(distance, *threshold_radius);
-                        let grad_w = grad_poly6_kernel(r, *threshold_radius);
-                        // let lap_w = viscosity_kernel(r, *dist_threshold);
-                        pressure_force +=
-                            pressure_coeff * (neighbor.mass) * (grad_w / neighbor.mass.powi(2));
-                        viscosity_force += *viscosity
-                            * viscosity_kernel(distance, *smoothing_radius)
-                            * (neighbor.velocity - particle.velocity);
-                    }
-                }
+        let dt = dt * sim_speed;
+        for particle in self.particles.iter_mut() {
+            let mut density = 0.0;
+            let mut pressure_force = Vec3::ZERO;
+            let mut viscosity_force = Vec3::ZERO;
 
-                let acceleration = (pressure_force
-                    + viscosity_force
-                    + particle.ext_force
-                    + Vec3::new(0.0, -gravity, 0.0))
-                    / particle.mass;
-                let velocity = particle.velocity + acceleration * dt;
+            let neighbors = self.grid.get_neighbors(particle.position);
+            for neighbor in neighbors.iter() {
+                let r = particle.position - neighbor.position;
+                let distance = r.length();
+                if distance < threshold_radius {
+                    density += neighbor.mass * poly6_kernel(distance, threshold_radius);
+                    let grad_w = grad_poly6_kernel(r, threshold_radius);
+                    // let lap_w = viscosity_kernel(r, *dist_threshold);
+                    pressure_force +=
+                        pressure_coeff * (neighbor.mass) * (grad_w / neighbor.mass.powi(2));
+                    viscosity_force += viscosity
+                        * viscosity_kernel(distance, smoothing_radius)
+                        * (neighbor.velocity - particle.velocity);
+                }
+            }
 
-                particle.density = density;
-                particle.pressure = pressure_force;
-                particle.velocity = velocity;
-                particle.position += velocity * dt;
+            let acceleration = (pressure_force
+                + viscosity_force
+                + particle.ext_force
+                + Vec3::new(0.0, -gravity, 0.0))
+                / particle.mass;
+            let velocity = particle.velocity + acceleration * dt;
 
-                let mut collision_normal = Vec3::ZERO;
-                if particle.position.x < -wall_x {
-                    collision_normal = Vec3::X;
-                    particle.position.x = -wall_x;
-                }
-                if particle.position.x > *wall_x {
-                    collision_normal = -Vec3::X;
-                    particle.position.x = *wall_x;
-                }
-                if particle.position.y < -wall_y {
-                    collision_normal = Vec3::Y;
-                    particle.position.y = -wall_y;
-                }
-                if particle.position.y > *wall_y {
-                    collision_normal = -Vec3::Y;
-                    particle.position.y = *wall_y;
-                }
+            particle.density = density;
+            particle.pressure = pressure_force;
+            particle.velocity = velocity;
+            particle.position += velocity * dt;
 
-                if collision_normal != Vec3::ZERO {
-                    let velocity_normal =
-                        particle.velocity.dot(collision_normal) * collision_normal;
-                    let velocity_tangential = particle.velocity - velocity_normal;
+            let mut collision_normal = Vec3::ZERO;
+            if particle.position.x < -wall_x {
+                collision_normal = Vec3::X;
+                particle.position.x = -wall_x;
+            }
+            if particle.position.x > wall_x {
+                collision_normal = -Vec3::X;
+                particle.position.x = wall_x;
+            }
+            if particle.position.y < -wall_y {
+                collision_normal = Vec3::Y;
+                particle.position.y = -wall_y;
+            }
+            if particle.position.y > wall_y {
+                collision_normal = -Vec3::Y;
+                particle.position.y = wall_y;
+            }
 
-                    particle.velocity =
-                        -restitution * velocity_normal + (1.0 - friction) * velocity_tangential;
-                }
+            if collision_normal != Vec3::ZERO {
+                let velocity_normal = particle.velocity.dot(collision_normal) * collision_normal;
+                let velocity_tangential = particle.velocity - velocity_normal;
+
+                particle.velocity =
+                    -restitution * velocity_normal + (1.0 - friction) * velocity_tangential;
             }
         }
     }
@@ -250,11 +231,26 @@ impl SPHFluid {
         }
     }
 
-    fn set_external_force(&mut self, point: Vec3, force: Vec3) {
+    fn set_push_force(&mut self, point: Vec3, force: Vec3) {
         for particle in self.particles.iter_mut() {
             let distance: f32 = particle.position.distance(point);
             let logistic_response = 1.0 / (1.0 + f32::exp(1.0 + distance));
             particle.ext_force = force * logistic_response;
+        }
+    }
+
+    fn set_grab_force(&mut self, point: Vec3, strength: f32, radius: f32, gravity: f32) {
+        for particle in self.particles.iter_mut() {
+            let vec = point - particle.position;
+            let dist = vec.length();
+            if dist < radius {
+                let edge = (dist / radius);
+                let center = 1.0 - edge;
+                let direction = vec / dist;
+                particle.ext_force = direction * center * strength + Vec3::new(0.0, gravity, 0.0);
+            } else {
+                particle.ext_force = Vec3::ZERO;
+            }
         }
     }
 
@@ -299,9 +295,11 @@ fn init_fluid(
     let mut fluid: SPHFluid = SPHFluid::new();
     let balls = fluid.get_balls();
     fluid.init();
-    let simvars = FluidSimVars {
+    let simvars = simui::FluidSimVars {
         initialized: false,
+        interact_mode: false,
         paused: false,
+        debug: false,
         map: HashMap::from([
             ("gravity".to_string(), 0.0),
             ("restitution".to_string(), 0.0),
@@ -333,7 +331,11 @@ fn init_fluid(
 
 fn update_fluid(
     time: Res<Time>,
-    mut query: Query<(&mut SPHFluid, &mut Handle<MetaballMaterial>, &FluidSimVars)>,
+    mut query: Query<(
+        &mut SPHFluid,
+        &mut Handle<MetaballMaterial>,
+        &simui::FluidSimVars,
+    )>,
     mut materials: ResMut<Assets<MetaballMaterial>>,
     mut gizmos: Gizmos,
 ) {
@@ -348,40 +350,50 @@ fn update_fluid(
         }
     }
 
-    // DEBUG
-    for particle in fluid.particles.iter() {
-        gizmos.circle_2d(
-            Vec2::new(particle.position.x, particle.position.y),
-            1.,
-            Color::rgba(1.0, 1.0, 1.0, 1.00),
-        );
+    if (simvars.debug) {
+        for particle in fluid.particles.iter() {
+            gizmos.circle_2d(
+                Vec2::new(particle.position.x, particle.position.y),
+                1.,
+                Color::rgba(1.0, 1.0, 1.0, 1.00),
+            );
+        }
     }
 }
 
 fn update_interactive(
     camera_query: Query<(&Camera, &GlobalTransform)>,
     window_query: Query<&Window, With<PrimaryWindow>>,
+    mb: Res<ButtonInput<MouseButton>>,
     mut motion_er: EventReader<MouseMotion>,
-    mut query: Query<(&mut SPHFluid, &FluidSimVars)>,
+    mut query: Query<(&mut SPHFluid, &simui::FluidSimVars)>,
     mut gizmos: Gizmos,
 ) {
     let (camera, camera_transform) = camera_query.single();
-
     let (mut fluid, simvars) = query.single_mut();
-    fluid.set_external_force(Vec3::ZERO, Vec3::ZERO);
-    for motion in motion_er.read() {
-        let window: &Window = window_query.single();
+    fluid.set_push_force(Vec3::ZERO, Vec3::ZERO);
 
-        if let Some(cursor_position) = window.cursor_position() {
-            if let Some(world_position) =
-                camera.viewport_to_world_2d(camera_transform, cursor_position)
-            {
-                gizmos.circle_2d(world_position, 10., Color::WHITE);
+    let window: &Window = window_query.single();
+    if let Some(cursor_position) = window.cursor_position() {
+        if let Some(world_position) = camera.viewport_to_world_2d(camera_transform, cursor_position)
+        {
+            gizmos.circle_2d(world_position, 10., Color::WHITE);
 
-                let point = Vec3::new(world_position.x, world_position.y, 0.0);
-                let force = Vec3::new(motion.delta.x, -motion.delta.y, 0.0);
-                if let Some(force_coeff) = simvars.map.get("interact_force") {
-                    fluid.set_external_force(point, force * *force_coeff);
+            let point = Vec3::new(world_position.x, world_position.y, 0.0);
+
+            let radius = simvars.get("interact_radius");
+            let strength = simvars.get("interact_force");
+            let gravity = simvars.get("gravity");
+        if simvars.interact_mode {
+                if mb.pressed(MouseButton::Left) {
+                    println!("grab force {}", strength);
+                    fluid.set_grab_force(point, strength, radius, gravity);
+                }
+            } else {
+                let force_coeff = simvars.get("interact_force");
+                for motion in motion_er.read() {
+                    let force = Vec3::new(motion.delta.x, -motion.delta.y, 0.0);
+                    fluid.set_push_force(point, force * force_coeff);
                 }
             }
         }
@@ -390,8 +402,8 @@ fn update_interactive(
 
 fn update_simvars(
     mut key_evr: EventReader<KeyboardInput>,
-    mut fluidquery: Query<(&mut FluidSimVars, &mut SPHFluid)>,
-    query: Query<(&crate::simui::SimVariable, &text_input::TextInputValue)>,
+    mut fluidquery: Query<(&mut simui::FluidSimVars, &mut SPHFluid)>,
+    query: Query<(&simui::SimVariable, &text_input::TextInputValue)>,
 ) {
     let (mut simvars, mut fluid) = fluidquery.single_mut();
     let mut do_update = false;
@@ -400,11 +412,21 @@ fn update_simvars(
             if ev.key_code == KeyCode::Enter {
                 do_update = true;
             }
+            if ev.key_code == KeyCode::KeyD {
+                simvars.debug = !simvars.debug;
+                println!("debug: {}", simvars.debug);
+            }
             if ev.key_code == KeyCode::KeyP {
                 simvars.paused = !simvars.paused;
+                println!("paused: {}", simvars.paused);
+            }
+            if ev.key_code == KeyCode::KeyI {
+                simvars.interact_mode = !simvars.interact_mode;
+                println!("interact mode: {}", simvars.interact_mode);
             }
             if ev.key_code == KeyCode::KeyR {
                 fluid.init();
+                println!("resetting")
             }
         }
     }
@@ -415,7 +437,7 @@ fn update_simvars(
     if do_update {
         for (simvar, input) in query.iter() {
             let value = input.0.parse::<f32>().unwrap_or(0.0);
-            simvars.map.insert(simvar.name.clone(), value);
+            simvars.set(simvar.name.clone(), value);
             println!("updating {} to {}", simvar.name.clone(), value);
         }
     }
@@ -425,30 +447,22 @@ fn poly6_kernel(r: f32, h: f32) -> f32 {
     if r > h {
         0.0
     } else {
-        // let coefficient = 315.0 / (64.0 * PI * h.powi(9));
-        let coefficient = 1.0;
         let h2_r2 = h * h - r * r;
-        coefficient * h2_r2.powi(3)
+        h2_r2.powi(3)
     }
 }
 
 fn grad_poly6_kernel(r: Vec3, h: f32) -> Vec3 {
     let r_length = r.length();
     if r_length < h && r_length != 0.0 {
-        // let coefficient = -945.0 / (32.0 * std::f32::consts::PI * h.powi(9));
-        let coefficient = 1.0;
         let h2_r2 = h * h - r_length * r_length;
-        let factor = coefficient * h2_r2.powi(2);
-        return r * factor;
+        return r * h2_r2.powi(2);
     }
     Vec3::ZERO
 }
 
 fn viscosity_kernel(r: f32, h: f32) -> f32 {
     if r < h {
-        // let coefficient = 45.0 / (std::f32::consts::PI * h.powi(6));
-        // return coefficient * (h - r_length);
-        let coefficient = 1.0;
         let h2_r2 = h * h - r * r;
         return h2_r2.powi(3);
     }
