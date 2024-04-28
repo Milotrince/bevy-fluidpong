@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use crate::lib::{
     kernel::{Kernel, KernelFunction, Poly6Kernel, SpikyKernel, ViscosityKernel},
     spatial_grid::{Position, SpatialGrid2D},
@@ -52,16 +50,16 @@ impl Plugin for SPHFluidPlugin {
 
 #[derive(Debug, Clone)]
 struct Particle {
-    position: Vec3,
-    velocity: Vec3,
+    position: Vec2,
+    velocity: Vec2,
     mass: f32,
     density: f32,
     pressure: f32,
-    ext_force: Vec3,
+    ext_force: Vec2,
 }
 
 impl Position for Particle {
-    fn position(&self) -> Vec3 {
+    fn position(&self) -> Vec2 {
         self.position
     }
 }
@@ -79,10 +77,10 @@ impl SPHFluid {
         let mut fluid = SPHFluid {
             // These numbers must all be the same. Sorry Trinity I got rid of
             // the simvar for this param :( but we can add it back if you want
-            particles: SpatialGrid2D::new(5.0),
-            density_kernel: Poly6Kernel::new(5.0).into(),
-            pressure_kernel: SpikyKernel::new(5.0).into(),
-            viscosity_kernel: ViscosityKernel::new(5.0).into(),
+            particles: SpatialGrid2D::new(10.0),
+            density_kernel: Poly6Kernel::new(10.0).into(),
+            pressure_kernel: SpikyKernel::new(10.0).into(),
+            viscosity_kernel: ViscosityKernel::new(10.0).into(),
         };
 
         let hx: f32 = PARTICLES_DX * NUM_PARTICLES_X as f32 / 2.0;
@@ -91,16 +89,12 @@ impl SPHFluid {
         for i in 1..NUM_PARTICLES_X {
             for j in 1..NUM_PARTICLES_Y {
                 let particle = Particle {
-                    position: Vec3::new(
-                        i as f32 * PARTICLES_DX - hx,
-                        j as f32 * PARTICLES_DY - hy,
-                        0.0,
-                    ),
-                    velocity: Vec3::ZERO,
+                    position: Vec2::new(i as f32 * PARTICLES_DX - hx, j as f32 * PARTICLES_DY - hy),
+                    velocity: Vec2::ZERO,
                     mass: PARTICLE_MASS,
                     density: INITIAL_DENSITY,
                     pressure: 0.0,
-                    ext_force: Vec3::ZERO,
+                    ext_force: Vec2::ZERO,
                 };
                 fluid.particles.insert(particle);
             }
@@ -113,12 +107,12 @@ impl SPHFluid {
         if let (
             Some(&viscosity),
             Some(&pressure_coeff),
-            Some(wall_x),
-            Some(wall_y),
-            Some(restitution),
-            Some(friction),
-            Some(gravity),
-            Some(sim_speed),
+            Some(&wall_x),
+            Some(&wall_y),
+            Some(&restitution),
+            Some(&friction),
+            Some(&gravity),
+            Some(&sim_speed),
         ) = (
             simvars.map.get("viscosity"),
             simvars.map.get("pressure"),
@@ -144,7 +138,7 @@ impl SPHFluid {
                     let r = neighbor.position - particle.position;
                     particle.density += neighbor.mass * self.density_kernel.evaluate(r);
                 }
-                particle.pressure = pressure_coeff * (particle.density - 0.1).max(0.0);
+                particle.pressure = pressure_coeff * (particle.density - 0.5).max(0.0);
             }
 
             // FIXME: Don't clone all the time
@@ -153,8 +147,8 @@ impl SPHFluid {
             // Calculate forces for each particle based on the density and
             // pressure of the particles within the smoothing radius.
             for particle in self.particles.iter_mut() {
-                let mut pressure_force = Vec3::ZERO;
-                let mut viscosity_force = Vec3::ZERO;
+                let mut pressure_force = Vec2::ZERO;
+                let mut viscosity_force = Vec2::ZERO;
 
                 for neighbor in old_particles.query(particle.position) {
                     if particle.position == neighbor.position {
@@ -175,32 +169,37 @@ impl SPHFluid {
                 let total_force = pressure_force
                     + viscosity_force
                     + particle.ext_force
-                    + Vec3::new(0.0, -gravity, 0.0);
+                    + Vec2::new(0.0, -gravity * particle.mass);
                 let acceleration = total_force / particle.mass;
                 let velocity = particle.velocity + acceleration * dt;
 
                 particle.velocity = velocity;
                 particle.position += velocity * dt;
 
-                let mut collision_normal = Vec3::ZERO;
+                // Collision with walls
+                // particle.position.x = particle.position.x.max(-wall_x).min(wall_x);
+                // particle.position.y = particle.position.y.max(-wall_y).min(wall_y);
+
+                let mut collision_normal = Vec2::ZERO;
                 if particle.position.x < -wall_x {
-                    collision_normal = Vec3::X;
+                    collision_normal += Vec2::X;
                     particle.position.x = -wall_x;
                 }
-                if particle.position.x > *wall_x {
-                    collision_normal = -Vec3::X;
-                    particle.position.x = *wall_x;
+                if particle.position.x > wall_x {
+                    collision_normal -= Vec2::X;
+                    particle.position.x = wall_x;
                 }
                 if particle.position.y < -wall_y {
-                    collision_normal = Vec3::Y;
+                    collision_normal += Vec2::Y;
                     particle.position.y = -wall_y;
                 }
-                if particle.position.y > *wall_y {
-                    collision_normal = -Vec3::Y;
-                    particle.position.y = *wall_y;
+                if particle.position.y > wall_y {
+                    collision_normal -= Vec2::Y;
+                    particle.position.y = wall_y;
                 }
 
-                if collision_normal != Vec3::ZERO {
+                if collision_normal != Vec2::ZERO {
+                    collision_normal = collision_normal.normalize();
                     let velocity_normal =
                         particle.velocity.dot(collision_normal) * collision_normal;
                     let velocity_tangential = particle.velocity - velocity_normal;
@@ -214,7 +213,7 @@ impl SPHFluid {
         }
     }
 
-    fn set_external_force(&mut self, point: Vec3, force: Vec3) {
+    fn set_external_force(&mut self, point: Vec2, force: Vec2) {
         for particle in self.particles.iter_mut() {
             let distance: f32 = particle.position.distance(point);
             let logistic_response = 1.0 / (1.0 + f32::exp(1.0 + distance));
@@ -300,7 +299,7 @@ fn update_fluid(
     mut materials: ResMut<Assets<MetaballMaterial>>,
     mut gizmos: Gizmos,
 ) {
-    let (mut fluid, mut handle, simvars) = query.single_mut();
+    let (mut fluid, handle, simvars) = query.single_mut();
     if !simvars.paused {
         let dt: f32 = time.delta_seconds();
         fluid.update_particle_forces(dt, simvars);
@@ -330,7 +329,7 @@ fn update_interactive(
     let (camera, camera_transform) = camera_query.single();
 
     let (mut fluid, simvars) = query.single_mut();
-    fluid.set_external_force(Vec3::ZERO, Vec3::ZERO);
+    fluid.set_external_force(Vec2::ZERO, Vec2::ZERO);
     for motion in motion_er.read() {
         let window: &Window = window_query.single();
 
@@ -340,8 +339,8 @@ fn update_interactive(
             {
                 gizmos.circle_2d(world_position, 10., Color::WHITE);
 
-                let point = Vec3::new(world_position.x, world_position.y, 0.0);
-                let force = Vec3::new(motion.delta.x, -motion.delta.y, 0.0);
+                let point = Vec2::new(world_position.x, world_position.y);
+                let force = Vec2::new(motion.delta.x, -motion.delta.y);
                 if let Some(force_coeff) = simvars.map.get("interact_force") {
                     fluid.set_external_force(point, force * *force_coeff);
                 }

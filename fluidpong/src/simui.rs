@@ -35,8 +35,8 @@ impl SimVariable {
 
 fn setup(mut commands: Commands) {
     let simvars = [
-        SimVariable::new("sim_speed", 5.0),
-        SimVariable::new("gravity", 9.81),
+        SimVariable::new("sim_speed", 20.0),
+        SimVariable::new("gravity", 1.0),
         SimVariable::new("restitution", 0.2),
         SimVariable::new("friction", 0.8),
         SimVariable::new("viscosity", 0.1),

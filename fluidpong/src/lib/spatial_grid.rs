@@ -1,4 +1,4 @@
-use bevy::{math::Vec3, utils::HashMap};
+use bevy::{math::Vec2, utils::HashMap};
 
 const NEIGHBOR_OFFSETS: [(i32, i32); 9] = [
     (-1, -1),
@@ -13,7 +13,7 @@ const NEIGHBOR_OFFSETS: [(i32, i32); 9] = [
 ];
 
 pub trait Position {
-    fn position(&self) -> Vec3;
+    fn position(&self) -> Vec2;
 }
 
 /// A 2D spatial grid that stores entities with a position.
@@ -45,7 +45,7 @@ impl<T: Position> SpatialGrid2D<T> {
     }
 
     /// Retrieves entities within the radius of the given position.
-    pub fn query(&self, position: Vec3) -> Vec<&T> {
+    pub fn query(&self, position: Vec2) -> Vec<&T> {
         let key = self.get_key(position);
 
         NEIGHBOR_OFFSETS
@@ -80,7 +80,7 @@ impl<T: Position> SpatialGrid2D<T> {
         self.inner.values_mut().flatten()
     }
 
-    fn get_key(&self, position: Vec3) -> (i32, i32) {
+    fn get_key(&self, position: Vec2) -> (i32, i32) {
         (
             (position.x / self.radius).floor() as i32,
             (position.y / self.radius).floor() as i32,
