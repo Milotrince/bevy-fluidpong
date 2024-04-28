@@ -1,16 +1,8 @@
-use bevy::{math::Vec2, utils::HashMap};
+use bevy::math::Vec2;
+use bevy::utils::HashMap;
 
-const NEIGHBOR_OFFSETS: [(i32, i32); 9] = [
-    (-1, -1),
-    (-1, 0),
-    (-1, 1),
-    (0, -1),
-    (0, 0),
-    (0, 1),
-    (1, -1),
-    (1, 0),
-    (1, 1),
-];
+const NEIGHBOR_OFFSETS: [(i32, i32); 9] =
+    [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0), (0, 1), (1, -1), (1, 0), (1, 1)];
 
 pub trait Position {
     fn position(&self) -> Vec2;
@@ -30,18 +22,12 @@ pub struct SpatialGrid2D<T: Position> {
 impl<T: Position> SpatialGrid2D<T> {
     /// Creates a new grid supporting queries with the given radius.
     pub fn new(radius: f32) -> Self {
-        Self {
-            radius,
-            inner: HashMap::new(),
-        }
+        Self { radius, inner: HashMap::new() }
     }
 
     /// Inserts an entity into the grid.
     pub fn insert(&mut self, entity: T) {
-        self.inner
-            .entry(self.get_key(entity.position()))
-            .or_insert_with(Vec::new)
-            .push(entity);
+        self.inner.entry(self.get_key(entity.position())).or_insert_with(Vec::new).push(entity);
     }
 
     /// Retrieves entities within the radius of the given position.
@@ -81,9 +67,15 @@ impl<T: Position> SpatialGrid2D<T> {
     }
 
     fn get_key(&self, position: Vec2) -> (i32, i32) {
-        (
-            (position.x / self.radius).floor() as i32,
-            (position.y / self.radius).floor() as i32,
-        )
+        ((position.x / self.radius).floor() as i32, (position.y / self.radius).floor() as i32)
+    }
+}
+
+impl<'a, T: Position> IntoIterator for &'a SpatialGrid2D<T> {
+    type Item = &'a T;
+    type IntoIter = Box<dyn Iterator<Item = &'a T> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.iter())
     }
 }

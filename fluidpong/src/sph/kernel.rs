@@ -38,6 +38,7 @@ pub enum Kernel {
 
 /// A good general-purpose kernel for SPH fluid simulations that avoids
 /// instability when particles are too close together.
+#[derive(Debug)]
 pub struct Poly6Kernel {
     h: f32,
 }
@@ -83,6 +84,7 @@ impl KernelFunction for Poly6Kernel {
 }
 
 /// A kernel function that peaks near 0, good for pressure calculations.
+#[derive(Debug)]
 pub struct SpikyKernel {
     h: f32,
 }
@@ -105,6 +107,7 @@ impl KernelFunction for SpikyKernel {
 }
 
 /// A kernel function that is used to calculate viscosity.
+#[derive(Debug)]
 pub struct ViscosityKernel {
     h: f32,
 }

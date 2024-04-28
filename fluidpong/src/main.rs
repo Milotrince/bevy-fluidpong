@@ -1,8 +1,7 @@
 use bevy::prelude::*;
 // pub mod pong;
-pub mod sphfluid;
-pub mod simui;
-pub mod lib;
+pub mod sph;
+// pub mod sphfluid;
 
 fn main() {
     App::new()
@@ -10,8 +9,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             // COMMENT/UNCOMMENT FOR WHAT YOU ARE WORKING ON
-            sphfluid::SPHFluidPlugin,
-            simui::SimUIPlugin,
+            sph::SPHFluidPlugin,
             // pong::PongPlugin
             // fluidpong::FluidPongPlugin,
         ))
@@ -21,6 +19,7 @@ fn main() {
 fn spawn_camera(mut commands: Commands) {
     commands.spawn_empty().insert(Camera2dBundle::default());
 }
+
 fn resize_window(mut windows: Query<&mut Window>) {
     let mut window = windows.single_mut();
     window.resolution.set(640.0, 480.0);
