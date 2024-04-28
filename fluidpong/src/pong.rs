@@ -257,7 +257,7 @@ fn reset_ball(
 fn handle_player_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut paddle1: Query<&mut Velocity, With<Player1>>,
-    mut paddle2: Query<&mut Velocity, With<Player1>>,
+    mut paddle2: Query<&mut Velocity, (With<Player2>, Without<Player1>)>,
 ) {
     if let Ok(mut velocity) = paddle1.get_single_mut() {
         if keyboard_input.pressed(KeyCode::KeyW) {
