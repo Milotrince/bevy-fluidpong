@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use crate::lib::text_input;
+use bevy::prelude::*;
 
 const BORDER_COLOR_ACTIVE: Color = Color::rgb(0.75, 0.52, 0.99);
 const BORDER_COLOR_INACTIVE: Color = Color::rgb(0.25, 0.25, 0.25);
@@ -35,15 +35,13 @@ impl SimVariable {
 
 fn setup(mut commands: Commands) {
     let simvars = [
-        SimVariable::new("sim_speed", 10.0),
+        SimVariable::new("sim_speed", 5.0),
         SimVariable::new("gravity", 9.81),
         SimVariable::new("restitution", 0.2),
         SimVariable::new("friction", 0.8),
-        SimVariable::new("viscosity", 0.01),
-        SimVariable::new("pressure", 1.0),
-        SimVariable::new("interact_force", 1000.0),
-        SimVariable::new("threshold_radius", 5.0),
-        SimVariable::new("smoothing_radius", 4.0),
+        SimVariable::new("viscosity", 0.1),
+        SimVariable::new("pressure", 100.0),
+        SimVariable::new("interact_force", 10000.0),
         SimVariable::new("wall_x", 200.0),
         SimVariable::new("wall_y", 200.0),
     ];
@@ -64,57 +62,55 @@ fn setup(mut commands: Commands) {
         ))
         .with_children(|uiparent| {
             for simvar in simvars {
-                uiparent.spawn((
-                    NodeBundle {
-                        style: Style {
-                            width: Val::Px(200.0),
-                            // height: Val::Percent(100.0),
-                            flex_direction: FlexDirection::Row,
-                            align_items: AlignItems::FlexStart,
-                            justify_content: JustifyContent::SpaceBetween,
+                uiparent
+                    .spawn((
+                        NodeBundle {
+                            style: Style {
+                                width: Val::Px(200.0),
+                                // height: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                align_items: AlignItems::FlexStart,
+                                justify_content: JustifyContent::SpaceBetween,
+                                ..default()
+                            },
                             ..default()
                         },
-                        ..default()
-                    },
-                    Interaction::None,
-                )).with_children(|parent| {
-                parent.spawn(
-                    (TextBundle::from_section(
-                        simvar.name.clone(),
-                        TextStyle {
-                            font_size: 12.0,
-                            ..default()
-                        },
-                    )),
-                );
-                parent.spawn((
-                    NodeBundle {
-                        style: Style {
-                            width: Val::Px(200.0),
-                            border: UiRect::all(Val::Px(1.0)),
-                            padding: UiRect::all(Val::Px(2.0)),
-                            ..default()
-                        },
-                        border_color: BORDER_COLOR_INACTIVE.into(),
-                        background_color: BACKGROUND_COLOR.into(),
-                        ..default()
-                    },
-                    text_input::TextInputBundle::default()
-                        .with_text_style(TextStyle {
-                            font_size: 14.,
-                            color: TEXT_COLOR,
-                            ..default()
-                        })
-                        .with_value(simvar.value.to_string())
-                        .with_settings(text_input::TextInputSettings {
-                            retain_on_submit: true,
-                        })
-                        .with_inactive(true),
-                        simvar
-                ));
-
-                });
-
+                        Interaction::None,
+                    ))
+                    .with_children(|parent| {
+                        parent.spawn(TextBundle::from_section(
+                            simvar.name.clone(),
+                            TextStyle {
+                                font_size: 12.0,
+                                ..default()
+                            },
+                        ));
+                        parent.spawn((
+                            NodeBundle {
+                                style: Style {
+                                    width: Val::Px(200.0),
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    padding: UiRect::all(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                border_color: BORDER_COLOR_INACTIVE.into(),
+                                background_color: BACKGROUND_COLOR.into(),
+                                ..default()
+                            },
+                            text_input::TextInputBundle::default()
+                                .with_text_style(TextStyle {
+                                    font_size: 14.,
+                                    color: TEXT_COLOR,
+                                    ..default()
+                                })
+                                .with_value(simvar.value.to_string())
+                                .with_settings(text_input::TextInputSettings {
+                                    retain_on_submit: true,
+                                })
+                                .with_inactive(true),
+                            simvar,
+                        ));
+                    });
             }
         });
 }

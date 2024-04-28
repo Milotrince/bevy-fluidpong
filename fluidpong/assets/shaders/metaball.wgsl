@@ -6,7 +6,7 @@ var<uniform> color: vec4<f32>;
 var<uniform> radius: f32;
 @group(2) @binding(2)
 var<uniform> metaballs: array<vec4<f32>, 1024>;
-// array strides must be multiple of 16. 
+// array strides must be multiple of 16.
 // metaball.x : x position
 // metaball.y : y position
 // metaball.z : density
@@ -48,12 +48,12 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     let opacity = clamp(density_sum, 0.2, 1.0);
     let h = clamp(speed_sum / 1024.0, 0.0, 1.0);
-    
+
     let colorhsv: vec3<f32> = vec3(h, 1.0, 0.5);
+
     if (sum > threshold) {
         return vec4<f32>(hsv2rgb(colorhsv), opacity);
     } else {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
-    
 }

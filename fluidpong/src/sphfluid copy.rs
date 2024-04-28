@@ -52,6 +52,7 @@ impl Plugin for SPHFluidPlugin {
 
 #[derive(Debug, Clone)]
 struct Particle {
+    id: u32,
     position: Vec3,
     velocity: Vec3,
     mass: f32,
@@ -91,6 +92,7 @@ impl SPHFluid {
         for i in 1..NUM_PARTICLES_X {
             for j in 1..NUM_PARTICLES_Y {
                 let particle = Particle {
+                    id: i * NUM_PARTICLES_Y + j,
                     position: Vec3::new(
                         i as f32 * PARTICLES_DX - hx,
                         j as f32 * PARTICLES_DY - hy,
@@ -113,8 +115,8 @@ impl SPHFluid {
         if let (
             Some(&viscosity),
             Some(&pressure_coeff),
-            Some(wall_x),
-            Some(wall_y),
+            Some(&wall_x),
+            Some(&wall_y),
             Some(restitution),
             Some(friction),
             Some(gravity),
@@ -138,13 +140,14 @@ impl SPHFluid {
             for particle in self.particles.iter_mut() {
                 particle.density = 0.0;
                 for neighbor in old_particles.query(particle.position) {
-                    if particle.position == neighbor.position {
+                    if particle.id == neighbor.id {
                         continue;
                     }
                     let r = neighbor.position - particle.position;
                     particle.density += neighbor.mass * self.density_kernel.evaluate(r);
                 }
                 particle.pressure = pressure_coeff * (particle.density - 0.1).max(0.0);
+                dbg!(particle.density);
             }
 
             // FIXME: Don't clone all the time
@@ -157,19 +160,19 @@ impl SPHFluid {
                 let mut viscosity_force = Vec3::ZERO;
 
                 for neighbor in old_particles.query(particle.position) {
-                    if particle.position == neighbor.position {
+                    if particle.id == neighbor.id {
                         continue;
                     }
                     let r = particle.position - neighbor.position;
 
-                    pressure_force -= neighbor.mass / neighbor.density
-                        * (particle.pressure + neighbor.pressure)
-                        / 2.0
+                    pressure_force -= neighbor.mass * (particle.pressure + neighbor.pressure)
+                        / (2.0 * neighbor.density)
                         * self.pressure_kernel.gradient(r);
 
-                    viscosity_force += viscosity * neighbor.mass / neighbor.density
-                        * (neighbor.velocity - particle.velocity)
-                        * self.viscosity_kernel.laplacian(r);
+                    viscosity_force +=
+                        viscosity * neighbor.mass * (neighbor.velocity - particle.velocity)
+                            / neighbor.density
+                            * self.viscosity_kernel.laplacian(r);
                 }
 
                 let total_force = pressure_force
@@ -187,17 +190,17 @@ impl SPHFluid {
                     collision_normal = Vec3::X;
                     particle.position.x = -wall_x;
                 }
-                if particle.position.x > *wall_x {
+                if particle.position.x > wall_x {
                     collision_normal = -Vec3::X;
-                    particle.position.x = *wall_x;
+                    particle.position.x = wall_x;
                 }
                 if particle.position.y < -wall_y {
                     collision_normal = Vec3::Y;
                     particle.position.y = -wall_y;
                 }
-                if particle.position.y > *wall_y {
+                if particle.position.y > wall_y {
                     collision_normal = -Vec3::Y;
-                    particle.position.y = *wall_y;
+                    particle.position.y = wall_y;
                 }
 
                 if collision_normal != Vec3::ZERO {
