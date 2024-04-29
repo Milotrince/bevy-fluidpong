@@ -13,8 +13,8 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             // COMMENT/UNCOMMENT FOR WHAT YOU ARE WORKING ON
-            // sph::SPHFluidPlugin,
-            nsfluid::NSFluidPlugin,
+            sph::SPHFluidPlugin,
+            // nsfluid::NSFluidPlugin,
             simui::SimUIPlugin,
             // pong::PongPlugin
         ))

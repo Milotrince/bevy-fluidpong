@@ -1,7 +1,7 @@
-mod fluid;
-mod kernel;
-mod particle;
-mod spatial_grid;
+pub mod fluid;
+pub mod kernel;
+pub mod particle;
+pub mod spatial_grid;
 
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::ecs::event::EventReader;

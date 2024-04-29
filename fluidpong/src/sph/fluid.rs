@@ -4,9 +4,9 @@ use std::ops::Mul;
 use bevy::ecs::component::Component;
 use bevy::math::Vec2;
 
-use super::kernel::{Kernel, KernelFunction, Poly6Kernel, SpikyKernel, ViscosityKernel};
-use super::particle::Particle;
-use super::spatial_grid::SpatialGrid2D;
+use crate::sph::kernel::{Kernel, KernelFunction, Poly6Kernel, SpikyKernel, ViscosityKernel};
+use crate::sph::particle::Particle;
+use crate::sph::spatial_grid::SpatialGrid2D;
 
 const KERNEL_RADIUS: f32 = 8.0;
 const NUM_PARTICLES_X: u32 = 32;
