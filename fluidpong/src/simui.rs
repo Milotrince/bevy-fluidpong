@@ -56,18 +56,26 @@ impl SimVariable {
 
 fn setup(mut commands: Commands) {
     let simvars = [
-        SimVariable::new("sim_speed", 10.0),
-        SimVariable::new("gravity", 9.81),
-        SimVariable::new("restitution", 0.2),
-        SimVariable::new("friction", 0.8),
-        SimVariable::new("viscosity", 0.01),
-        SimVariable::new("pressure", 1.0),
+        // SimVariable::new("sim_speed", 10.0),
+        // SimVariable::new("gravity", 9.81),
+        // SimVariable::new("restitution", 0.2),
+        // SimVariable::new("friction", 0.8),
+        // SimVariable::new("viscosity", 0.01),
+        // SimVariable::new("pressure", 1.0),
+        // SimVariable::new("interact_force", 10.0),
+        // SimVariable::new("interact_radius", 50.0),
+        // SimVariable::new("threshold_radius", 5.0),
+        // SimVariable::new("smoothing_radius", 4.0),
+        // SimVariable::new("wall_x", 200.0),
+        // SimVariable::new("wall_y", 200.0),
+
+        SimVariable::new("dt", 0.00001),
+        SimVariable::new("viscosity", 0.0),
+        SimVariable::new("diffusion", 0.2),
+        SimVariable::new("iter", 4.),
         SimVariable::new("interact_force", 10.0),
-        SimVariable::new("interact_radius", 50.0),
-        SimVariable::new("threshold_radius", 5.0),
-        SimVariable::new("smoothing_radius", 4.0),
-        SimVariable::new("wall_x", 200.0),
-        SimVariable::new("wall_y", 200.0),
+        SimVariable::new("interact_velocity", 1000.0),
+        SimVariable::new("dissipation", 0.001),
     ];
     commands
         .spawn((
