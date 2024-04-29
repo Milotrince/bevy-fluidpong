@@ -63,7 +63,7 @@ fn update_interactive(
 
                 let point = Vec2::new(world_position.x, world_position.y);
                 let force = Vec2::new(motion.delta.x, -motion.delta.y);
-                fluid.set_external_force(point, force * 10000.0);
+                fluid.set_external_force(point, force * 30000.0);
             }
         }
     }
