@@ -2,7 +2,7 @@ pub mod math;
 pub mod fluid;
 
 use crate::{
-    lib::text_input,
+    simui::text_input,
     ns::math::{fluid_step, index},
     ns::fluid::*,
     simui::{FluidSimVars, SimVariable},

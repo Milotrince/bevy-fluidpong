@@ -3,7 +3,6 @@ pub mod sph;
 pub mod pong;
 pub mod ns;
 pub mod simui;
-pub mod lib;
 
 fn main() {
     App::new()
@@ -11,9 +10,9 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             // COMMENT/UNCOMMENT FOR WHAT YOU ARE WORKING ON
-            // sph::SPHFluidPlugin,
-            ns::FluidPlugin,
-            simui::SimUIPlugin,
+            sph::SPHFluidPlugin,
+            // ns::FluidPlugin,
+            // simui::SimUIPlugin,
             // pong::PongPlugin
         ))
         .run();

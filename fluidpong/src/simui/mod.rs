@@ -1,4 +1,5 @@
-use crate::lib::text_input;
+pub mod text_input;
+
 use bevy::{prelude::*, utils::HashMap};
 
 const BORDER_COLOR_ACTIVE: Color = Color::rgb(0.75, 0.52, 0.99);
