@@ -1,6 +1,10 @@
+pub mod math;
+pub mod fluid;
+
 use crate::{
     lib::text_input,
-    nsmath::{fluid_step, index},
+    ns::math::{fluid_step, index},
+    ns::fluid::*,
     simui::{FluidSimVars, SimVariable},
 };
 use bevy::{
@@ -14,15 +18,9 @@ use bevy::{
     window::PrimaryWindow,
 };
 
-const INTERACT_VELOCITY: f32 = 5000.0;
-const FLUID_SIZE: u32 = 64;
-const NUM_CELLS: usize = (FLUID_SIZE * FLUID_SIZE) as usize;
-const WIDTH: f32 = 300.0;
-const HEIGHT: f32 = 300.0;
+pub struct FluidPlugin;
 
-pub struct NSFluidPlugin;
-
-impl Plugin for NSFluidPlugin {
+impl Plugin for FluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<FluidGridMaterial>::default())
             .add_systems(Startup, init_fluid)
@@ -49,67 +47,13 @@ impl Material2d for FluidGridMaterial {
     }
 }
 
-#[derive(Component)]
-pub struct NSFluid {
-    pub size: u32,
-    pub s: Vec<f32>,
-    pub density: Vec<f32>,
-    pub vx: Vec<f32>,
-    pub vy: Vec<f32>,
-    pub vx0: Vec<f32>,
-    pub vy0: Vec<f32>,
-}
-
-impl NSFluid {
-    fn new(size: u32) -> NSFluid {
-        let num_cells = (size * size) as usize;
-        NSFluid {
-            size,
-            s: vec![0.0; num_cells],
-            density: vec![0.0; num_cells],
-            vx: vec![0.0; num_cells],
-            vy: vec![0.0; num_cells],
-            vx0: vec![0.0; num_cells],
-            vy0: vec![0.0; num_cells],
-        }
-    }
-
-    fn reset(&mut self) {
-        let num_cells = (self.size * self.size) as usize;
-        self.s = vec![0.0; num_cells];
-        self.density = vec![0.0; num_cells];
-        self.vx = vec![0.0; num_cells];
-        self.vy = vec![0.0; num_cells];
-        self.vx0 = vec![0.0; num_cells];
-        self.vy0 = vec![0.0; num_cells];
-    }
-
-    fn add_density(&mut self, x: u32, y: u32, amount: f32) {
-        self.density[index(self.size, x, y)] += amount;
-    }
-
-    fn add_velocity(&mut self, x: u32, y: u32, amount_x: f32, amount_y: f32) {
-        let index = index(self.size, x, y);
-
-        self.vx[index] += amount_x;
-        self.vy[index] += amount_y;
-    }
-
-    fn get_cells(&self) -> [Vec4; NUM_CELLS] {
-        let mut cells = [Vec4::ZERO; NUM_CELLS];
-        for i in 0..NUM_CELLS {
-            cells[i] = Vec4::new(self.vx[i], self.vy[i], self.density[i], 0.0);
-        }
-        cells
-    }
-}
 
 fn init_fluid(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<FluidGridMaterial>>,
 ) {
-    let fluid: NSFluid = NSFluid::new(FLUID_SIZE);
+    let fluid: Fluid = Fluid::new(FLUID_SIZE);
     let simvars = FluidSimVars {
         initialized: false,
         interact_mode: false,
@@ -148,7 +92,7 @@ fn update_interactive(
     window_query: Query<&Window, With<PrimaryWindow>>,
     mb: Res<ButtonInput<MouseButton>>,
     mut motion_er: EventReader<MouseMotion>,
-    mut query: Query<(&mut NSFluid, &FluidSimVars)>,
+    mut query: Query<(&mut Fluid, &FluidSimVars)>,
     mut gizmos: Gizmos,
 ) {
     let (camera, camera_transform) = camera_query.single();
@@ -181,7 +125,7 @@ fn update_interactive(
 }
 
 fn update_fluid(
-    mut query: Query<(&mut NSFluid, &Handle<FluidGridMaterial>, &FluidSimVars)>,
+    mut query: Query<(&mut Fluid, &Handle<FluidGridMaterial>, &FluidSimVars)>,
     mut materials: ResMut<Assets<FluidGridMaterial>>,
 ) {
     let (mut fluid, handle, simvars) = query.single_mut();
@@ -208,7 +152,7 @@ fn update_fluid(
 
 fn update_simvars(
     mut key_evr: EventReader<KeyboardInput>,
-    mut fluidquery: Query<(&mut FluidSimVars, &mut NSFluid)>,
+    mut fluidquery: Query<(&mut FluidSimVars, &mut Fluid)>,
     query: Query<(&SimVariable, &text_input::TextInputValue)>,
 ) {
     let (mut simvars, mut fluid) = fluidquery.single_mut();

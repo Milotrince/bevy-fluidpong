@@ -1,4 +1,4 @@
-use crate::nsfluid::NSFluid;
+use crate::ns::fluid::Fluid;
 
 
 fn constrain<T: PartialOrd>(val: T, min: T, max: T) -> T {
@@ -165,7 +165,7 @@ fn advect(
 }
 
 
-pub fn fluid_step(fluid: &mut NSFluid, visc: f32, diff: f32, dt: f32, iter: u32) {
+pub fn fluid_step(fluid: &mut Fluid, visc: f32, diff: f32, dt: f32, iter: u32) {
     let n = fluid.size;
 
     diffuse(1, &mut fluid.vx0, &fluid.vx, visc, dt, iter, n);
