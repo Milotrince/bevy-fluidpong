@@ -1,7 +1,11 @@
 use bevy::prelude::*;
-// pub mod pong;
 pub mod sph;
-// pub mod sphfluid;
+pub mod pong;
+pub mod sphfluid;
+pub mod nsfluid;
+pub mod nsmath;
+pub mod simui;
+pub mod lib;
 
 fn main() {
     App::new()
@@ -9,9 +13,10 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             // COMMENT/UNCOMMENT FOR WHAT YOU ARE WORKING ON
-            sph::SPHFluidPlugin,
+            // sph::SPHFluidPlugin,
+            nsfluid::NSFluidPlugin,
+            simui::SimUIPlugin,
             // pong::PongPlugin
-            // fluidpong::FluidPongPlugin,
         ))
         .run();
 }
