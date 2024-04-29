@@ -2,7 +2,7 @@ use std::iter::Sum;
 use std::ops::Mul;
 
 use bevy::ecs::component::Component;
-use bevy::math::Vec2;
+use bevy::math::{Vec2, Vec4};
 
 use crate::sph::kernel::{Kernel, KernelFunction, Poly6Kernel, SpikyKernel, ViscosityKernel};
 use crate::sph::particle::Particle;
@@ -15,8 +15,15 @@ const PARTICLE_MASS: f32 = 100.0;
 const REST_DENS: f32 = 5.0;
 const GAS_CONST: f32 = 10000.0;
 const VISC_CONST: f32 = 200.0;
-const EPS: f32 = KERNEL_RADIUS;
 const BOUND_DAMPING: f32 = -0.5;
+const DX: f32 = 4.0;
+const DY: f32 = 4.0;
+
+pub const WALL_X: f32 = 100.0;
+pub const WALL_Y: f32 = 200.0;
+
+const EPS: f32 = KERNEL_RADIUS;
+pub const NUM_PARTICLES: usize = (NUM_PARTICLES_X * NUM_PARTICLES_Y) as usize;
 
 #[derive(Component)]
 pub struct Fluid {
@@ -33,11 +40,8 @@ impl Fluid {
 
         for i in 0..NUM_PARTICLES_X {
             for j in 0..NUM_PARTICLES_Y {
-                let x = -100.0 + i as f32 * 4.0;
-                let y = -64.0 + j as f32 * 4.0;
-                // if x * x + y * y > 80.0 * 80.0 {
-                //     continue;
-                // }
+                let x = -WALL_X + i as f32 * DX;
+                let y = -WALL_Y + j as f32 * DY;
                 particles.insert(Particle::new(Vec2::new(x, y), PARTICLE_MASS));
             }
         }
@@ -133,21 +137,21 @@ impl Fluid {
             pi.velocity += dt * pi.force / pi.density;
             pi.position += dt * pi.velocity;
 
-            if pi.position.x - EPS < -100.0 {
+            if pi.position.x - EPS < -WALL_X {
                 pi.velocity.x *= BOUND_DAMPING;
-                pi.position.x = EPS - 100.0;
+                pi.position.x = EPS - WALL_X;
             }
-            if pi.position.x + EPS > 100.0 {
+            if pi.position.x + EPS > WALL_X {
                 pi.velocity.x *= BOUND_DAMPING;
-                pi.position.x = 100.0 - EPS;
+                pi.position.x = WALL_X - EPS;
             }
-            if pi.position.y - EPS < -200.0 {
+            if pi.position.y - EPS < -WALL_Y {
                 pi.velocity.y *= BOUND_DAMPING;
-                pi.position.y = EPS - 200.0;
+                pi.position.y = EPS - WALL_Y;
             }
-            if pi.position.y + EPS > 200.0 {
+            if pi.position.y + EPS > WALL_Y {
                 pi.velocity.y *= BOUND_DAMPING;
-                pi.position.y = 200.0 - EPS;
+                pi.position.y = WALL_Y - EPS;
             }
         }
 
@@ -168,4 +172,22 @@ impl Fluid {
     pub fn particles(&self) -> &SpatialGrid2D<Particle> {
         &self.particles
     }
+
+    /// Returns metaball information for the shader
+    pub fn get_balls(&self) -> [Vec4; NUM_PARTICLES] {
+        let mut balls = [Vec4::ZERO; NUM_PARTICLES];
+        for (i, particle) in self.particles.iter().enumerate() {
+            if i >= NUM_PARTICLES {
+                break;
+            }
+            balls[i] = Vec4::new(
+                particle.position.x,
+                particle.position.y,
+                particle.density,
+                particle.velocity.length(),
+            );
+        }
+        balls
+    }
+
 }

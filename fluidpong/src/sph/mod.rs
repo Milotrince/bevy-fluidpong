@@ -10,8 +10,11 @@ use bevy::ecs::system::{Commands, Query, Res};
 use bevy::gizmos::gizmos::Gizmos;
 use bevy::input::mouse::MouseMotion;
 use bevy::math::Vec2;
+use bevy::prelude::*;
 use bevy::render::camera::Camera;
 use bevy::render::color::Color;
+use bevy::render::render_resource::{AsBindGroup, ShaderRef};
+use bevy::sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle, Mesh2dHandle};
 use bevy::time::Time;
 use bevy::transform::components::GlobalTransform;
 use bevy::window::{PrimaryWindow, Window};
@@ -20,23 +23,48 @@ pub struct SPHFluidPlugin;
 
 impl Plugin for SPHFluidPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, startup)
-            .add_systems(Update, draw_gizmos)
-            .add_systems(Update, update_interactive)
-            .add_systems(Update, update_fluid);
+        app.add_plugins(Material2dPlugin::<MetaballMaterial>::default())
+            .add_systems(Startup, startup)
+            .add_systems(Update, (draw_gizmos, update_interactive, update_fluid, update_shader));
     }
 }
 
-fn startup(mut commands: Commands) {
-    commands.spawn(fluid::Fluid::new());
+fn startup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<MetaballMaterial>>,
+) {
+    let fluid = fluid::Fluid::new();
+    let balls = fluid.get_balls();
+    commands.spawn((
+        fluid,
+        MaterialMesh2dBundle {
+            mesh: Mesh2dHandle(meshes.add(Rectangle::new(fluid::WALL_X * 2.0, fluid::WALL_Y * 2.0))),
+            material: materials.add(MetaballMaterial {
+                color: Color::BLUE,
+                radius: 2.0,
+                balls: balls,
+            }),
+            transform: Transform::from_translation(Vec3::ZERO),
+            ..default()
+        },
+    ));
 }
 
-fn update_fluid(time: Res<Time>, mut fluids: Query<&mut fluid::Fluid>) {
-    for mut fluid in fluids.iter_mut() {
-        // Update the fluid
-        fluid.compute_density_pressure();
-        fluid.compute_forces();
-        fluid.integrate(time.delta_seconds());
+fn update_fluid(time: Res<Time>, mut fluid_query: Query<&mut fluid::Fluid>) {
+    let mut fluid = fluid_query.single_mut();
+    fluid.compute_density_pressure();
+    fluid.compute_forces();
+    fluid.integrate(time.delta_seconds());
+}
+
+fn update_shader(
+    mut query: Query<(&fluid::Fluid, &Handle<MetaballMaterial>)>,
+    mut materials: ResMut<Assets<MetaballMaterial>>,
+) {
+    let (fluid, handle) = query.single_mut();
+    if let Some(material) = materials.get_mut(&*handle) {
+        material.balls = fluid.get_balls();
     }
 }
 
@@ -75,5 +103,21 @@ fn draw_gizmos(mut gizmos: Gizmos, fluids: Query<&fluid::Fluid>) {
             // Draw a circle at the particle's position
             gizmos.circle_2d(particle.position, 2.0, Color::WHITE);
         }
+    }
+}
+
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+pub struct MetaballMaterial {
+    #[uniform(0)]
+    color: Color,
+    #[uniform(1)]
+    radius: f32,
+    #[uniform(2)]
+    balls: [Vec4; fluid::NUM_PARTICLES],
+}
+
+impl Material2d for MetaballMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/metaball.wgsl".into()
     }
 }

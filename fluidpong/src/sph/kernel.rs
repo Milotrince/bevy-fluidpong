@@ -50,7 +50,6 @@ impl Poly6Kernel {
 
     pub fn coefficient(&self, r: Vec2) -> f32 {
         if r.length() <= self.h {
-            // 315.0 / (64.0 * PI * self.h.powi(9))
             4.0 / (PI * self.h.powi(8))
         } else {
             0.0

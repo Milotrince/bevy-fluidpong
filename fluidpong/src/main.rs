@@ -15,7 +15,7 @@ fn main() {
             // COMMENT/UNCOMMENT FOR WHAT YOU ARE WORKING ON
             sph::SPHFluidPlugin,
             // nsfluid::NSFluidPlugin,
-            simui::SimUIPlugin,
+            // simui::SimUIPlugin,
             // pong::PongPlugin
         ))
         .run();
