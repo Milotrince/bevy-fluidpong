@@ -79,7 +79,7 @@ fn ns_setup(commands: Commands) {
         SimVariable::new("diffusion", 0.2),
         SimVariable::new("interact_force", 10.0),
         SimVariable::new("interact_velocity", 1000.0),
-        SimVariable::new("dissipation", 0.001),
+        SimVariable::new("dissipation", 0.1),
     ];
     setup(commands, simvars);
 }

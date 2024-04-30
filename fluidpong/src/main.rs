@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use std::env;
 use clap::Parser;
 
 pub mod sph;
@@ -27,7 +26,8 @@ fn main() {
 
     let mut app = App::new();
     app.add_systems(Startup, (spawn_camera, resize_window));
-    app.add_plugins((DefaultPlugins, pong::PongPlugin));
+    app.add_plugins(DefaultPlugins);
+    app.add_plugins(pong::PongPlugin);
     if args.fluid == "sph" {
         app.add_plugins(sph::FluidPlugin {debug: args.debug});
     } else {

@@ -1,20 +1,20 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 
 @group(2) @binding(0)
-var<uniform> width: f32;
+var<uniform> screen_size: vec2<f32>;
 @group(2) @binding(1)
-var<uniform> height: f32;
+var<uniform> grid_size: vec2<f32>;
 @group(2) @binding(2)
-var<uniform> cells: array<vec4<f32>, 4096>;
+var<uniform> cells: array<vec4<f32>, 6912>;
 // array strides must be multiple of 16. 
 // cell.x : vx
 // cell.y : vy
 // cell.z : density
 // cell.w : --
-const GRID_LENGTH: u32 = 64;
 const HUE_MIN: f32 = 0.67;
 const HUE_MAX: f32 = 0.50;
 const MAX_VEL_MAGNITUDE: f32 = 10000.0;
+const MAX_OPACITY: f32 = 0.7;
 
 fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
     // assumes components are 0...1
@@ -42,10 +42,10 @@ fn mag(cell: vec4<f32>) -> f32 {
 // fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 //     var pos: vec2<f32> = mesh.world_position.xy;
 
-//     var cellX: u32 = u32((pos.x + width/2.0) / width * f32(GRID_LENGTH));
-//     var cellY: u32 = u32((pos.y + height/2.0) / height * f32(GRID_LENGTH));
+//     var cellX: u32 = u32((pos.x + screen_size.x / 2.0) / screen_size.x * grid_size.x);
+//     var cellY: u32 = u32((pos.y + screen_size.y / 2.0) / screen_size.y * grid_size.y);
 
-//     var i: u32 = cellY * GRID_LENGTH + cellX;
+//     var i: u32 = cellY * u32(grid_size.x) + cellX;
 //     var cell: vec4<f32> = cells[i];
 //     var d: f32 = cell[2];
 
@@ -61,29 +61,33 @@ fn mag(cell: vec4<f32>) -> f32 {
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     var pos: vec2<f32> = mesh.world_position.xy;
+
+    var cellX: f32 = (pos.x + screen_size.x / 2.0) / screen_size.x * f32(grid_size.x);
+    var cellY: f32 = (pos.y + screen_size.y / 2.0) / screen_size.y * f32(grid_size.y);
     
-    var gridX: f32 = (pos.x + width / 2.0) / width * f32(GRID_LENGTH);
-    var gridY: f32 = (pos.y + height / 2.0) / height * f32(GRID_LENGTH);
-    
-    var baseX: u32 = u32(gridX);
-    var baseY: u32 = u32(gridY);
-    var fracX: f32 = fract(gridX);
-    var fracY: f32 = fract(gridY);
-    
-    var i0: u32 = baseY * GRID_LENGTH + baseX;
-    var i1: u32 = baseY * GRID_LENGTH + min(baseX + 1, GRID_LENGTH - 1);
-    var i2: u32 = min(baseY + 1, GRID_LENGTH - 1) * GRID_LENGTH + baseX;
-    var i3: u32 = min(baseY + 1, GRID_LENGTH - 1) * GRID_LENGTH + min(baseX + 1, GRID_LENGTH - 1);
-    
+    var ix: u32 = u32(cellX);
+    var iy: u32 = u32(cellY);
+
+    var fracX: f32 = fract(cellX);
+    var fracY: f32 = fract(cellY);
+
+    var gx: u32 = u32(grid_size.x);
+    var gy: u32 = u32(grid_size.y);
+
+    var i0: u32 = iy * gx + ix;
+    var i1: u32 = iy * gx + min(ix + 1, gx - 1);
+    var i2: u32 = min(iy + 1, gy - 1) * gx + ix;
+    var i3: u32 = min(iy + 1, gy - 1) * gx + min(ix + 1, gx - 1);
+
     var c0: vec4<f32> = cells[i0];
     var c1: vec4<f32> = cells[i1];
     var c2: vec4<f32> = cells[i2];
     var c3: vec4<f32> = cells[i3];
     
-    var d = bilinear(c0[2], c1[2], c2[2], c3[2], fracX, fracY);
+    var d = clamp(bilinear(c0[2], c1[2], c2[2], c3[2], fracX, fracY), 0.0, MAX_OPACITY);
     var m = bilinear(mag(c0), mag(c1), mag(c2), mag(c3), fracX, fracY);
 
-    var hue: f32 = HUE_MIN - (m / MAX_VEL_MAGNITUDE) * HUE_MAX;
+    var hue: f32 = clamp(HUE_MIN - (m / MAX_VEL_MAGNITUDE) * HUE_MAX, HUE_MAX, HUE_MIN);
     var color: vec3<f32> = hsv2rgb(vec3<f32>(hue, 1.0, 1.0));
     
     return vec4<f32>(color, d);

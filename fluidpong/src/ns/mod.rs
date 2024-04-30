@@ -27,7 +27,8 @@ impl Plugin for FluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<FluidGridMaterial>::default())
             .add_systems(Startup, init_fluid)
-            .add_systems(Update, update_fluid);
+            .add_systems(Update, update_fluid)
+            .add_systems(Update, update_interactive);
         if self.debug {
             app.add_systems(Update, (update_simvars, update_interactive));
         }
@@ -37,9 +38,9 @@ impl Plugin for FluidPlugin {
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct FluidGridMaterial {
     #[uniform(0)]
-    width: f32,
+    screen_size: Vec2,
     #[uniform(1)]
-    height: f32,
+    grid_size: Vec2,
     #[uniform(2)]
     cells: [Vec4; NUM_CELLS],
 }
@@ -55,7 +56,7 @@ fn init_fluid(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<FluidGridMaterial>>,
 ) {
-    let fluid: Fluid = Fluid::new(FLUID_SIZE);
+    let fluid: Fluid = Fluid::new();
     let simvars = FluidSimVars {
         initialized: false,
         interact_mode: false,
@@ -79,8 +80,8 @@ fn init_fluid(
         MaterialMesh2dBundle {
             mesh: Mesh2dHandle(meshes.add(Rectangle::new(WIDTH, HEIGHT))),
             material: materials.add(FluidGridMaterial {
-                width: WIDTH,
-                height: HEIGHT,
+                screen_size: Vec2::new(WIDTH as f32, HEIGHT as f32),
+                grid_size: Vec2::new(GRID_X as f32, GRID_Y as f32),
                 cells: cells,
             }),
             transform: Transform::from_translation(Vec3::ZERO),
@@ -104,21 +105,16 @@ fn update_interactive(
     if let Some(cursor_position) = window.cursor_position() {
         if let Some(world_position) = camera.viewport_to_world_2d(camera_transform, cursor_position)
         {
-            let point = Vec3::new(world_position.x, world_position.y, 0.0);
+            let point = Vec2::new(world_position.x, world_position.y);
 
             if mb.pressed(MouseButton::Left) {
                 gizmos.circle_2d(world_position, 10., Color::BLUE);
                 let strength = simvars.get("interact_force");
-                let ix = ((point.x + WIDTH / 2.0) / (WIDTH as f32) * (FLUID_SIZE as f32)) as u32;
-                let iy = ((point.y + HEIGHT / 2.0) / (HEIGHT as f32) * (FLUID_SIZE as f32)) as u32;
-
-                fluid.add_density(ix, iy, strength);
+                fluid.add_density(point, strength);
                 for motion in motion_er.read() {
                     fluid.add_velocity(
-                        ix,
-                        iy,
-                        motion.delta.x * INTERACT_VELOCITY,
-                        -motion.delta.y * INTERACT_VELOCITY,
+                        point,
+                        Vec2::new(1., -1.) * motion.delta * INTERACT_VELOCITY
                     );
                 }
             }
@@ -138,10 +134,10 @@ fn update_fluid(
     let iter = simvars.get("iter") as u32;
     if !simvars.paused {
         fluid_step(&mut fluid, viscosity, diffusion, dt, iter);
-        for i in 0..FLUID_SIZE {
-            for j in 0..FLUID_SIZE {
-                if fluid.density[index(FLUID_SIZE, i, j)] > 0.0 {
-                    fluid.add_density(i, j, -dissipation);
+        for i in 0..GRID_X {
+            for j in 0..GRID_Y {
+                if fluid.density[index(i, j)] > dissipation {
+                    fluid.add_density_grid(i, j, -dissipation);
                 }
             }
         }

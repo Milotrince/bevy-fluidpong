@@ -10,7 +10,7 @@ use bevy::{
 
 use crate::{GAME_HEIGHT, SCREEN_HEIGHT};
 
-const BALL_SPEED: f32 = 6.;
+const BALL_INITIAL_SPEED: f32 = 6.;
 const BALL_SIZE: f32 = 5.;
 const PADDLE_SPEED: f32 = 6.;
 const PADDLE_WIDTH: f32 = 10.;
@@ -234,11 +234,11 @@ fn reset_ball(
             match event.0 {
                 Scorer::Player2 => {
                     position.0 = Vec2::new(0., 0.);
-                    velocity.0 = Vec2::new(-1., 1.);
+                    velocity.0 = Vec2::new(-1., 1.) * BALL_INITIAL_SPEED;
                 }
                 Scorer::Player1 => {
                     position.0 = Vec2::new(0., 0.);
-                    velocity.0 = Vec2::new(1., 1.);
+                    velocity.0 = Vec2::new(1., 1.) * BALL_INITIAL_SPEED;
                 }
             }
         }
@@ -367,7 +367,7 @@ fn move_ball(
             velocity.0 += fluid.get_fluid_force_at(pos, vel);
             fluid.apply_ball_force(pos, vel);
         }
-        position.0 += velocity.0 * BALL_SPEED;
+        position.0 += velocity.0;
 
     }
 }
