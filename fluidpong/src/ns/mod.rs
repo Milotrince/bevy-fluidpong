@@ -1,5 +1,6 @@
 pub mod math;
 pub mod fluid;
+mod pongfluid;
 
 use crate::{
     simui::text_input,
@@ -24,10 +25,11 @@ impl Plugin for FluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<FluidGridMaterial>::default())
             .add_systems(Startup, init_fluid)
-            .add_systems(
-                Update,
-                (update_simvars, update_interactive, update_fluid).chain(),
-            );
+            .add_systems(Update, (
+                update_simvars,
+                update_interactive,
+                update_fluid
+            ).chain());
     }
 }
 

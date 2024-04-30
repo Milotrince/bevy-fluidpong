@@ -2,6 +2,7 @@ pub mod fluid;
 pub mod kernel;
 pub mod particle;
 pub mod spatial_grid;
+mod pongfluid;
 
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::ecs::event::EventReader;
@@ -24,8 +25,13 @@ pub struct SPHFluidPlugin;
 impl Plugin for SPHFluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<MetaballMaterial>::default())
-            .add_systems(Startup, startup)
-            .add_systems(Update, (draw_gizmos, update_interactive, update_fluid, update_shader));
+            .add_systems(PostStartup, startup)
+            .add_systems(Update, (
+                // draw_gizmos,
+                // update_interactive,
+                update_fluid,
+                update_shader
+            ));
     }
 }
 
@@ -42,7 +48,6 @@ fn startup(
             mesh: Mesh2dHandle(meshes.add(Rectangle::new(fluid::WALL_X * 2.0, fluid::WALL_Y * 2.0))),
             material: materials.add(MetaballMaterial {
                 color: Color::BLUE,
-                radius: 2.0,
                 balls: balls,
             }),
             transform: Transform::from_translation(Vec3::ZERO),
@@ -78,7 +83,7 @@ fn update_interactive(
     let (camera, camera_transform) = camera_query.single();
 
     let mut fluid = query.single_mut();
-    fluid.set_external_force(Vec2::ZERO, Vec2::ZERO);
+    fluid.set_external_force(Vec2::ZERO, Vec2::ZERO, 0.0);
 
     for motion in motion_er.read() {
         let window: &Window = window_query.single();
@@ -91,7 +96,7 @@ fn update_interactive(
 
                 let point = Vec2::new(world_position.x, world_position.y);
                 let force = Vec2::new(motion.delta.x, -motion.delta.y);
-                fluid.set_external_force(point, force * 30000.0);
+                fluid.set_external_force(point, force * 30000.0, 10.0);
             }
         }
     }
@@ -111,8 +116,6 @@ pub struct MetaballMaterial {
     #[uniform(0)]
     color: Color,
     #[uniform(1)]
-    radius: f32,
-    #[uniform(2)]
     balls: [Vec4; fluid::NUM_PARTICLES],
 }
 

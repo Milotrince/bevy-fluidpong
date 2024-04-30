@@ -47,11 +47,7 @@ pub struct SimVariable {
 
 impl SimVariable {
     fn new(name: &str, value: f32) -> Self {
-        Self {
-            name: String::from(name),
-            value: value,
-            initial: value,
-        }
+        Self { name: String::from(name), value: value, initial: value }
     }
 }
 
@@ -69,7 +65,6 @@ fn setup(mut commands: Commands) {
         // SimVariable::new("smoothing_radius", 4.0),
         // SimVariable::new("wall_x", 200.0),
         // SimVariable::new("wall_y", 200.0),
-
         SimVariable::new("dt", 0.00001),
         SimVariable::new("viscosity", 0.0),
         SimVariable::new("diffusion", 0.2),
@@ -111,15 +106,10 @@ fn setup(mut commands: Commands) {
                         Interaction::None,
                     ))
                     .with_children(|parent| {
-                        parent.spawn(
-                            (TextBundle::from_section(
-                                simvar.name.clone(),
-                                TextStyle {
-                                    font_size: 12.0,
-                                    ..default()
-                                },
-                            )),
-                        );
+                        parent.spawn(TextBundle::from_section(
+                            simvar.name.clone(),
+                            TextStyle { font_size: 12.0, ..default() },
+                        ));
                         parent.spawn((
                             NodeBundle {
                                 style: Style {

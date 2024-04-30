@@ -3,14 +3,19 @@
 @group(2) @binding(0)
 var<uniform> color: vec4<f32>;
 @group(2) @binding(1)
-var<uniform> radius: f32;
-@group(2) @binding(2)
 var<uniform> metaballs: array<vec4<f32>, 1024>;
 // array strides must be multiple of 16.
 // metaball.x : x position
 // metaball.y : y position
 // metaball.z : density
 // metaball.w : velocity magnitude
+const HUE_MIN: f32 = 0.67;
+const HUE_MAX: f32 = 0.50;
+const MAX_DENSITY: f32 = 100.0;
+const MAX_SPEED: f32 = 1000.0;
+const RADIUS: f32 = 3.0;
+const THRESHOLD: f32 = 0.2;
+const MIN_OPACITY: f32 = 0.3;
 
 fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
     // assumes components are 0...1
@@ -27,8 +32,6 @@ fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    var threshold: f32 = 0.4;
-
     var pos: vec2<f32> = mesh.world_position.xy;
     var sum: f32 = 0.0;
     var density_sum: f32 = 0.0;
@@ -36,22 +39,19 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     for (var i = 0; i < 1024; i++) {
         var ball: vec4<f32> = metaballs[i];
-        // skip if inactive ball
-        if (ball.x != 0.0 && ball.y != 0.0 && ball.w != 0.0) {
-            let dist = distance(pos, vec2(ball.x, ball.y));
-            let influence = radius / (dist * dist + 1.0);
-            sum += influence;
-            density_sum += ball.z / (dist + 1.0) / 6.0;
-            speed_sum += ball.w / (dist + 1.0);
-        }
+        let dist = distance(pos, vec2(ball.x, ball.y));
+        let influence = RADIUS / (dist * dist + 1.0);
+        sum += influence;
+        density_sum += ball.z / (dist + 1.0) / 6.0;
+        speed_sum += ball.w / (dist + 1.0);
     }
 
-    let opacity = clamp(density_sum, 0.2, 1.0);
-    let h = clamp(speed_sum / 1024.0, 0.0, 1.0);
+    let opacity = clamp(density_sum / MAX_DENSITY, MIN_OPACITY, 1.0);
+    let hue = clamp(HUE_MIN - (speed_sum / MAX_SPEED) * HUE_MAX, 0.0, 1.0);
 
-    let colorhsv: vec3<f32> = vec3(h, 1.0, 0.5);
+    let colorhsv: vec3<f32> = vec3(hue, 1.0, 0.5);
 
-    if (sum > threshold) {
+    if (sum > THRESHOLD) {
         return vec4<f32>(hsv2rgb(colorhsv), opacity);
     } else {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);

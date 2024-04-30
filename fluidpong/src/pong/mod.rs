@@ -1,15 +1,22 @@
+pub mod pongfluid;
+
+use pongfluid::PongFluid;
+
 use bevy::{
     math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume},
     prelude::*,
     sprite::MaterialMesh2dBundle,
 };
 
-const BALL_SPEED: f32 = 5.;
+use crate::{GAME_HEIGHT, SCREEN_HEIGHT};
+
+const BALL_SPEED: f32 = 6.;
 const BALL_SIZE: f32 = 5.;
-const PADDLE_SPEED: f32 = 4.;
+const PADDLE_SPEED: f32 = 6.;
 const PADDLE_WIDTH: f32 = 10.;
 const PADDLE_HEIGHT: f32 = 50.;
-const GUTTER_HEIGHT: f32 = 96.;
+const GUTTER_HEIGHT: f32 = (SCREEN_HEIGHT - GAME_HEIGHT) / 2.0;
+
 
 #[derive(Component)]
 struct Player1Score;
@@ -124,19 +131,11 @@ impl Plugin for PongPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Score>()
             .add_event::<Scored>()
-            .add_systems(
-                Startup,
-                (
-                    spawn_ball,
-                    spawn_paddles,
-                    spawn_gutters,
-                    spawn_scoreboard,
-                ),
-            )
+            .add_systems(Startup, (spawn_ball, spawn_paddles, spawn_gutters, spawn_scoreboard))
             .add_systems(
                 Update,
                 (
-                    move_ball,
+                    move_ball.before(move_paddles),
                     handle_player_input,
                     detect_scoring,
                     reset_ball.after(detect_scoring),
@@ -145,11 +144,11 @@ impl Plugin for PongPlugin {
                     move_paddles.after(handle_player_input),
                     project_positions.after(move_ball),
                     handle_collisions.after(move_ball),
+                    handle_player_input_fluid.after(move_ball),
                 ),
             );
     }
 }
-
 
 fn update_scoreboard(
     mut player1_score: Query<&mut Text, With<Player1Score>>,
@@ -171,11 +170,7 @@ fn spawn_scoreboard(mut commands: Commands) {
     commands.spawn((
         TextBundle::from_section(
             "0",
-            TextStyle {
-                font_size: 72.0,
-                color: Color::WHITE,
-                ..default()
-            },
+            TextStyle { font_size: 72.0, color: Color::WHITE, ..default() },
         )
         .with_text_justify(JustifyText::Center)
         .with_style(Style {
@@ -190,11 +185,7 @@ fn spawn_scoreboard(mut commands: Commands) {
     commands.spawn((
         TextBundle::from_section(
             "0",
-            TextStyle {
-                font_size: 72.0,
-                color: Color::WHITE,
-                ..default()
-            },
+            TextStyle { font_size: 72.0, color: Color::WHITE, ..default() },
         )
         .with_text_justify(JustifyText::Center)
         .with_style(Style {
@@ -249,6 +240,39 @@ fn reset_ball(
                     position.0 = Vec2::new(0., 0.);
                     velocity.0 = Vec2::new(1., 1.);
                 }
+            }
+        }
+    }
+}
+
+fn handle_player_input_fluid(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut sphfluid_query: Query<&mut crate::sph::fluid::Fluid>,
+    mut nsfluid_query: Query<&mut crate::ns::fluid::Fluid>,
+    mut paddle1: Query<&Position, With<Player1>>,
+    mut paddle2: Query<&Position, (With<Player2>, Without<Player1>)>,
+) {
+    if let Ok(mut fluid) = sphfluid_query.get_single_mut() {
+        if keyboard_input.pressed(KeyCode::ShiftLeft) {
+            if let Ok(position) = paddle1.get_single_mut() {
+                fluid.apply_emit_force(position.0, Vec2::new(1.0, 0.0))
+            }
+        }
+        if keyboard_input.pressed(KeyCode::ShiftRight) {
+            if let Ok(position) = paddle2.get_single_mut() {
+                fluid.apply_emit_force(position.0, Vec2::new(-1.0, 0.0))
+            }
+        }
+    }
+    if let Ok(mut fluid) = nsfluid_query.get_single_mut() {
+        if keyboard_input.pressed(KeyCode::ShiftLeft) {
+            if let Ok(position) = paddle1.get_single_mut() {
+                fluid.apply_emit_force(position.0, Vec2::new(1.0, 0.0))
+            }
+        }
+        if keyboard_input.pressed(KeyCode::ShiftRight) {
+            if let Ok(position) = paddle2.get_single_mut() {
+                fluid.apply_emit_force(position.0, Vec2::new(-1.0, 0.0))
             }
         }
     }
@@ -327,23 +351,47 @@ fn project_positions(mut ball: Query<(&mut Transform, &Position)>) {
     }
 }
 
-fn move_ball(mut ball: Query<(&mut Position, &Velocity), With<Ball>>) {
-    if let Ok((mut position, velocity)) = ball.get_single_mut() {
+fn move_ball(
+    mut ball: Query<(&mut Position, &mut Velocity), With<Ball>>,
+    mut sphfluid_query: Query<&mut crate::sph::fluid::Fluid>,
+    mut nsfluid_query: Query<&mut crate::ns::fluid::Fluid>,
+) {
+    if let Ok((mut position, mut velocity)) = ball.get_single_mut() {
+        let vel = velocity.0;
+        let pos = position.0;
+        if let Ok(mut fluid) = sphfluid_query.get_single_mut() {
+            velocity.0 += fluid.get_fluid_force_at(pos, vel);
+            fluid.apply_ball_force(pos, vel);
+        }
+        if let Ok(mut fluid) = nsfluid_query.get_single_mut() {
+            velocity.0 += fluid.get_fluid_force_at(pos, vel);
+            fluid.apply_ball_force(pos, vel);
+        }
         position.0 += velocity.0 * BALL_SPEED;
+
     }
 }
 
 fn move_paddles(
     mut paddle: Query<(&mut Position, &Velocity), With<Paddle>>,
     window: Query<&Window>,
+    mut sphfluid_query: Query<&mut crate::sph::fluid::Fluid>,
+    mut nsfluid_query: Query<&mut crate::ns::fluid::Fluid>,
 ) {
     if let Ok(window) = window.get_single() {
         let window_height = window.resolution.height();
 
         for (mut position, velocity) in &mut paddle {
-            let new_position = position.0 + velocity.0 * PADDLE_SPEED;
+            let vel = velocity.0 * PADDLE_SPEED;
+            let new_position = position.0 + vel;
             if new_position.y.abs() < window_height / 2. - GUTTER_HEIGHT - PADDLE_HEIGHT / 2. {
                 position.0 = new_position;
+                if let Ok(mut fluid) = sphfluid_query.get_single_mut() {
+                    fluid.apply_paddle_force(position.0, vel);
+                }
+                if let Ok(mut fluid) = nsfluid_query.get_single_mut() {
+                    fluid.apply_paddle_force(position.0, vel);
+                }
             }
         }
     }
@@ -435,7 +483,6 @@ fn spawn_paddles(
                 ..default()
             },
         ));
-
     }
 }
 
@@ -452,10 +499,6 @@ fn spawn_ball(
 
     commands.spawn((
         BallBundle::new(1., 1.),
-        MaterialMesh2dBundle {
-            mesh: mesh_handle.into(),
-            material: material_handle,
-            ..default()
-        },
+        MaterialMesh2dBundle { mesh: mesh_handle.into(), material: material_handle, ..default() },
     ));
 }

@@ -7,20 +7,20 @@ use bevy::math::{Vec2, Vec4};
 use crate::sph::kernel::{Kernel, KernelFunction, Poly6Kernel, SpikyKernel, ViscosityKernel};
 use crate::sph::particle::Particle;
 use crate::sph::spatial_grid::SpatialGrid2D;
+use crate::{GAME_HEIGHT, GAME_WIDTH};
 
 const KERNEL_RADIUS: f32 = 8.0;
 const NUM_PARTICLES_X: u32 = 32;
 const NUM_PARTICLES_Y: u32 = 32;
-const PARTICLE_MASS: f32 = 100.0;
-const REST_DENS: f32 = 5.0;
+const PARTICLE_MASS: f32 = 1000.0;
+const REST_DENS: f32 = 1.0;
 const GAS_CONST: f32 = 10000.0;
 const VISC_CONST: f32 = 200.0;
 const BOUND_DAMPING: f32 = -0.5;
-const DX: f32 = 4.0;
-const DY: f32 = 4.0;
+const GRAVITY: f32 = 0.0; // 10.0
 
-pub const WALL_X: f32 = 100.0;
-pub const WALL_Y: f32 = 200.0;
+pub const WALL_X: f32 = GAME_WIDTH / 2.0;
+pub const WALL_Y: f32 = GAME_HEIGHT / 2.0;
 
 const EPS: f32 = KERNEL_RADIUS;
 pub const NUM_PARTICLES: usize = (NUM_PARTICLES_X * NUM_PARTICLES_Y) as usize;
@@ -38,10 +38,12 @@ impl Fluid {
     pub fn new() -> Self {
         let mut particles = SpatialGrid2D::new(KERNEL_RADIUS);
 
+        let dx = WALL_X * 2.0 / NUM_PARTICLES_X as f32;
+        let dy = WALL_Y * 2.0 / NUM_PARTICLES_Y as f32;
         for i in 0..NUM_PARTICLES_X {
             for j in 0..NUM_PARTICLES_Y {
-                let x = -WALL_X + i as f32 * DX;
-                let y = -WALL_Y + j as f32 * DY;
+                let x = - WALL_X*0.9 + i as f32 * dx*0.9;
+                let y = - WALL_Y*0.9 + j as f32 * dy*0.9;
                 particles.insert(Particle::new(Vec2::new(x, y), PARTICLE_MASS));
             }
         }
@@ -121,7 +123,7 @@ impl Fluid {
             // Compute the forces acting on the particle
             let fi_press = self.interpolate_grad(pi.position, &self.pressure_kernel, ext_press);
             let fi_visc = self.interpolate_lapl(pi.position, &self.viscosity_kernel, ext_visc);
-            let fi_gravity = Vec2::new(0.0, -10.0) * pi.mass;
+            let fi_gravity = Vec2::new(0.0, -GRAVITY) * pi.mass;
             pi.force = fi_press + fi_visc + fi_gravity + pi.ext_force;
         }
 
@@ -160,12 +162,29 @@ impl Fluid {
     }
 
     /// Sets the external force acting on the fluid at the given point.
-    pub fn set_external_force(&mut self, point: Vec2, force: Vec2) {
+    pub fn set_external_force(&mut self, point: Vec2, force: Vec2, radius: f32) {
         for particle in self.particles.iter_mut() {
-            let distance = (particle.position.distance(point) - 10.0).max(0.0);
+            let distance = (particle.position.distance(point) - radius).max(0.0);
             let logistic_response = 1.0 / (1.0 + f32::exp(1.0 + distance));
             particle.ext_force = force * logistic_response;
         }
+    }
+
+    /// Add the external force acting on the fluid at the given point.
+    pub fn add_external_force(&mut self, point: Vec2, force: Vec2, radius: f32) {
+        for particle in self.particles.iter_mut() {
+            let distance = (particle.position.distance(point) - radius).max(0.0);
+            let logistic_response = 1.0 / (1.0 + f32::exp(1.0 + distance));
+            particle.ext_force += force * logistic_response;
+        }
+    }
+
+    pub fn get_force_at(&self, point: Vec2, velocity: Vec2) -> Vec2 {
+        let ext_press = |pj: &Particle| -pj.mass * pj.pressure;
+        let ext_visc = |pj: &Particle| VISC_CONST * pj.mass * (pj.velocity - velocity);
+        let fi_press = self.interpolate_grad(point, &self.pressure_kernel, ext_press);
+        let fi_visc = self.interpolate_lapl(point, &self.viscosity_kernel, ext_visc);
+        return fi_press + fi_visc;
     }
 
     /// Returns a reference to the particles in the fluid.
