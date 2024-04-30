@@ -1,8 +1,8 @@
 pub mod fluid;
 pub mod kernel;
 pub mod particle;
-pub mod spatial_grid;
 mod pongfluid;
+pub mod spatial_grid;
 
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::ecs::event::EventReader;
@@ -20,18 +20,18 @@ use bevy::time::Time;
 use bevy::transform::components::GlobalTransform;
 use bevy::window::{PrimaryWindow, Window};
 
-pub struct SPHFluidPlugin;
+pub struct FluidPlugin {
+    pub debug: bool,
+}
 
-impl Plugin for SPHFluidPlugin {
+impl Plugin for FluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<MetaballMaterial>::default())
             .add_systems(PostStartup, startup)
-            .add_systems(Update, (
-                // draw_gizmos,
-                // update_interactive,
-                update_fluid,
-                update_shader
-            ));
+            .add_systems(Update, (update_fluid, update_shader));
+        if self.debug {
+            app.add_systems(Update, (draw_gizmos, update_interactive));
+        }
     }
 }
 
@@ -45,11 +45,10 @@ fn startup(
     commands.spawn((
         fluid,
         MaterialMesh2dBundle {
-            mesh: Mesh2dHandle(meshes.add(Rectangle::new(fluid::WALL_X * 2.0, fluid::WALL_Y * 2.0))),
-            material: materials.add(MetaballMaterial {
-                color: Color::BLUE,
-                balls: balls,
-            }),
+            mesh: Mesh2dHandle(
+                meshes.add(Rectangle::new(fluid::WALL_X * 2.0, fluid::WALL_Y * 2.0)),
+            ),
+            material: materials.add(MetaballMaterial { color: Color::BLUE, balls: balls }),
             transform: Transform::from_translation(Vec3::ZERO),
             ..default()
         },

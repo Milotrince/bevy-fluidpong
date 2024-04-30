@@ -1,4 +1,7 @@
 use bevy::prelude::*;
+use std::env;
+use clap::Parser;
+
 pub mod sph;
 pub mod pong;
 pub mod ns;
@@ -9,18 +12,31 @@ const SCREEN_HEIGHT: f32 = 480.0;
 const GAME_WIDTH: f32 = SCREEN_WIDTH;
 const GAME_HEIGHT: f32 = SCREEN_HEIGHT - 160.0;
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    fluid: String,
+
+    #[arg(short, long, default_value_t = false)]
+    debug: bool,
+}
+
 fn main() {
-    App::new()
-        .add_systems(Startup, (spawn_camera, resize_window))
-        .add_plugins((
-            DefaultPlugins,
-            // COMMENT/UNCOMMENT FOR WHAT YOU ARE WORKING ON
-            pong::PongPlugin,
-            sph::SPHFluidPlugin,
-            // ns::FluidPlugin,
-            // simui::SimUIPlugin,
-        ))
-        .run();
+    let args = Args::parse();
+
+    let mut app = App::new();
+    app.add_systems(Startup, (spawn_camera, resize_window));
+    app.add_plugins((DefaultPlugins, pong::PongPlugin));
+    if args.fluid == "sph" {
+        app.add_plugins(sph::FluidPlugin {debug: args.debug});
+    } else {
+        app.add_plugins(ns::FluidPlugin {debug: args.debug});
+    }
+    if args.debug {
+        app.add_plugins(simui::SimUIPlugin {fluid_type: args.fluid});
+    }
+    app.run();
 }
 
 fn spawn_camera(mut commands: Commands) {

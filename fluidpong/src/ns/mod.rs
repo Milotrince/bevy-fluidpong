@@ -1,11 +1,11 @@
-pub mod math;
 pub mod fluid;
+pub mod math;
 mod pongfluid;
 
 use crate::{
-    simui::text_input,
-    ns::math::{fluid_step, index},
     ns::fluid::*,
+    ns::math::{fluid_step, index},
+    simui::text_input,
     simui::{FluidSimVars, SimVariable},
 };
 use bevy::{
@@ -19,17 +19,18 @@ use bevy::{
     window::PrimaryWindow,
 };
 
-pub struct FluidPlugin;
+pub struct FluidPlugin {
+    pub debug: bool,
+}
 
 impl Plugin for FluidPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(Material2dPlugin::<FluidGridMaterial>::default())
             .add_systems(Startup, init_fluid)
-            .add_systems(Update, (
-                update_simvars,
-                update_interactive,
-                update_fluid
-            ).chain());
+            .add_systems(Update, update_fluid);
+        if self.debug {
+            app.add_systems(Update, (update_simvars, update_interactive));
+        }
     }
 }
 
@@ -49,7 +50,6 @@ impl Material2d for FluidGridMaterial {
     }
 }
 
-
 fn init_fluid(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -62,13 +62,13 @@ fn init_fluid(
         paused: false,
         debug: false,
         map: HashMap::from([
-            ("dt".to_string(), 0.0),
-            ("iter".to_string(), 0.0),
-            ("size".to_string(), 0.0),
-            ("viscosity".to_string(), 0.0),
-            ("diffusion".to_string(), 0.0),
-            ("interact_force".to_string(), 0.0),
+            ("dt".to_string(), 0.00001),
+            ("iter".to_string(), 4.0),
+            ("viscosity".to_string(), 0.2),
+            ("diffusion".to_string(), 10.0),
+            ("interact_force".to_string(), 1000.0),
             ("interact_velocity".to_string(), 0.0),
+            ("diffusion".to_string(), 0.001),
         ]),
     };
     let cells = fluid.get_cells();

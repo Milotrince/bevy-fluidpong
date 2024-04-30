@@ -7,12 +7,14 @@ const BORDER_COLOR_INACTIVE: Color = Color::rgb(0.25, 0.25, 0.25);
 const TEXT_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 const BACKGROUND_COLOR: Color = Color::rgb(0.15, 0.15, 0.15);
 
-pub struct SimUIPlugin;
+pub struct SimUIPlugin {
+    pub fluid_type: String,
+}
 
 impl Plugin for SimUIPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(text_input::TextInputPlugin)
-            .add_systems(Startup, setup)
+            .add_systems(Startup, if self.fluid_type == "sph" { sph_setup } else { ns_setup })
             .add_systems(Update, focus);
     }
 }
@@ -51,28 +53,38 @@ impl SimVariable {
     }
 }
 
-fn setup(mut commands: Commands) {
-    let simvars = [
-        // SimVariable::new("sim_speed", 10.0),
-        // SimVariable::new("gravity", 9.81),
-        // SimVariable::new("restitution", 0.2),
-        // SimVariable::new("friction", 0.8),
-        // SimVariable::new("viscosity", 0.01),
-        // SimVariable::new("pressure", 1.0),
-        // SimVariable::new("interact_force", 10.0),
-        // SimVariable::new("interact_radius", 50.0),
-        // SimVariable::new("threshold_radius", 5.0),
-        // SimVariable::new("smoothing_radius", 4.0),
-        // SimVariable::new("wall_x", 200.0),
-        // SimVariable::new("wall_y", 200.0),
+fn sph_setup(commands: Commands) {
+    let simvars = vec![
+        SimVariable::new("sim_speed", 10.0),
+        SimVariable::new("gravity", 9.81),
+        SimVariable::new("restitution", 0.2),
+        SimVariable::new("friction", 0.8),
+        SimVariable::new("viscosity", 0.01),
+        SimVariable::new("pressure", 1.0),
+        SimVariable::new("interact_force", 10.0),
+        SimVariable::new("interact_radius", 50.0),
+        SimVariable::new("threshold_radius", 5.0),
+        SimVariable::new("smoothing_radius", 4.0),
+        SimVariable::new("wall_x", 200.0),
+        SimVariable::new("wall_y", 200.0),
+    ];
+    setup(commands, simvars);
+}
+
+fn ns_setup(commands: Commands) {
+    let simvars = vec![
         SimVariable::new("dt", 0.00001),
+        SimVariable::new("iter", 4.),
         SimVariable::new("viscosity", 0.0),
         SimVariable::new("diffusion", 0.2),
-        SimVariable::new("iter", 4.),
         SimVariable::new("interact_force", 10.0),
         SimVariable::new("interact_velocity", 1000.0),
         SimVariable::new("dissipation", 0.001),
     ];
+    setup(commands, simvars);
+}
+
+fn setup(mut commands: Commands, simvars: Vec<SimVariable>) {
     commands
         .spawn((
             NodeBundle {
@@ -95,7 +107,6 @@ fn setup(mut commands: Commands) {
                         NodeBundle {
                             style: Style {
                                 width: Val::Px(200.0),
-                                // height: Val::Percent(100.0),
                                 flex_direction: FlexDirection::Row,
                                 align_items: AlignItems::FlexStart,
                                 justify_content: JustifyContent::SpaceBetween,
