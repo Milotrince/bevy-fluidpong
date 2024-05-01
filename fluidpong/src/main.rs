@@ -27,12 +27,13 @@ fn main() {
     let mut app = App::new();
     app.add_systems(Startup, (spawn_camera, resize_window));
     app.add_plugins(DefaultPlugins);
-    app.add_plugins(pong::PongPlugin);
+    app.insert_resource(ClearColor(Color::BLACK));
     if args.fluid == "sph" {
         app.add_plugins(sph::FluidPlugin {debug: args.debug});
     } else {
         app.add_plugins(ns::FluidPlugin {debug: args.debug});
     }
+    app.add_plugins(pong::PongPlugin);
     if args.debug {
         app.add_plugins(simui::SimUIPlugin {fluid_type: args.fluid});
     }

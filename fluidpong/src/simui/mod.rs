@@ -1,6 +1,6 @@
 pub mod text_input;
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{input::{keyboard::KeyboardInput, ButtonState}, prelude::*, utils::HashMap};
 
 const BORDER_COLOR_ACTIVE: Color = Color::rgb(0.75, 0.52, 0.99);
 const BORDER_COLOR_INACTIVE: Color = Color::rgb(0.25, 0.25, 0.25);
@@ -15,7 +15,7 @@ impl Plugin for SimUIPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(text_input::TextInputPlugin)
             .add_systems(Startup, if self.fluid_type == "sph" { sph_setup } else { ns_setup })
-            .add_systems(Update, focus);
+            .add_systems(Update, (update_simvars, focus));
     }
 }
 
@@ -26,9 +26,21 @@ pub struct FluidSimVars {
     pub paused: bool,
     pub debug: bool,
     pub interact_mode: bool,
+    pub do_reset: bool,
 }
 
 impl FluidSimVars {
+    pub fn new(map: HashMap<String, f32>) -> Self {
+        FluidSimVars {
+            map: map,
+            initialized: false,
+            paused: false,
+            debug: false,
+            interact_mode: false,
+            do_reset: false,
+        }
+    }
+
     pub fn get(&self, key: &str) -> f32 {
         if let Some(value) = self.map.get(key) {
             return *value;
@@ -55,18 +67,13 @@ impl SimVariable {
 
 fn sph_setup(commands: Commands) {
     let simvars = vec![
-        SimVariable::new("sim_speed", 10.0),
-        SimVariable::new("gravity", 9.81),
-        SimVariable::new("restitution", 0.2),
-        SimVariable::new("friction", 0.8),
-        SimVariable::new("viscosity", 0.01),
-        SimVariable::new("pressure", 1.0),
-        SimVariable::new("interact_force", 10.0),
-        SimVariable::new("interact_radius", 50.0),
-        SimVariable::new("threshold_radius", 5.0),
-        SimVariable::new("smoothing_radius", 4.0),
-        SimVariable::new("wall_x", 200.0),
-        SimVariable::new("wall_y", 200.0),
+        SimVariable::new("kernel_radius", 8.0),
+        SimVariable::new("particle_mass", 100.0),
+        SimVariable::new("rest_dens", 0.0),
+        SimVariable::new("gas_const", 1000.0),
+        SimVariable::new("visc_const", 300.0),
+        SimVariable::new("bound_damping", 0.5),
+        SimVariable::new("gravity", 1.0),
     ];
     setup(commands, simvars);
 }
@@ -149,6 +156,50 @@ fn setup(mut commands: Commands, simvars: Vec<SimVariable>) {
                     });
             }
         });
+}
+
+
+fn update_simvars(
+    mut key_evr: EventReader<KeyboardInput>,
+    mut simvars_query: Query<&mut FluidSimVars>,
+    query: Query<(&SimVariable, &text_input::TextInputValue)>,
+) {
+    let mut simvars = simvars_query.single_mut();
+    let mut do_update = false;
+    for ev in key_evr.read() {
+        if ev.state == ButtonState::Released {
+            if ev.key_code == KeyCode::Enter {
+                do_update = true;
+            }
+            if ev.key_code == KeyCode::KeyD {
+                simvars.debug = !simvars.debug;
+                println!("debug: {}", simvars.debug);
+            }
+            if ev.key_code == KeyCode::KeyP {
+                simvars.paused = !simvars.paused;
+                println!("paused: {}", simvars.paused);
+            }
+            if ev.key_code == KeyCode::KeyI {
+                simvars.interact_mode = !simvars.interact_mode;
+                println!("interact mode: {}", simvars.interact_mode);
+            }
+            if ev.key_code == KeyCode::KeyR {
+                simvars.do_reset = !simvars.do_reset;
+                println!("resetting")
+            }
+        }
+    }
+    if !simvars.initialized {
+        do_update = true;
+        simvars.initialized = true;
+    }
+    if do_update {
+        for (simvar, input) in query.iter() {
+            let value = input.0.parse::<f32>().unwrap_or(0.0);
+            simvars.set(simvar.name.clone(), value);
+            println!("updating {} to {}", simvar.name.clone(), value);
+        }
+    }
 }
 
 fn focus(

@@ -7,8 +7,8 @@ pub const BALL_FORCE_ON_FLUID_RADIUS: f32 = 5.0;
 pub const PADDLE_FORCE_ON_FLUID: f32 = 10000.0;
 pub const PADDLE_FORCE_ON_FLUID_RADIUS: f32 = 10.0;
 pub const EMIT_FORCE_ON_FLUID: f32 = 100000.0;
-pub const EMIT_FORCE_ON_FLUID_RADIUS: f32 = 40.0;
-pub const FLUID_FORCE_ON_BALL: f32 = 0.00001;
+pub const EMIT_FORCE_ON_FLUID_RADIUS: f32 = 30.0;
+pub const FLUID_FORCE_ON_BALL: f32 = 0.01;
 
 impl PongFluid for crate::sph::fluid::Fluid {
      fn apply_emit_force(&mut self, position: Vec2, velocity: Vec2) {

@@ -2,13 +2,9 @@ pub mod pongfluid;
 
 use pongfluid::PongFluid;
 
-use bevy::{
-    math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume},
-    prelude::*,
-    sprite::MaterialMesh2dBundle,
-};
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 
-use crate::{GAME_HEIGHT, SCREEN_HEIGHT};
+use crate::{GAME_HEIGHT, GAME_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 
 const BALL_INITIAL_SPEED: f32 = 6.;
 const BALL_SIZE: f32 = 5.;
@@ -16,7 +12,6 @@ const PADDLE_SPEED: f32 = 6.;
 const PADDLE_WIDTH: f32 = 10.;
 const PADDLE_HEIGHT: f32 = 50.;
 const GUTTER_HEIGHT: f32 = (SCREEN_HEIGHT - GAME_HEIGHT) / 2.0;
-
 
 #[derive(Component)]
 struct Player1Score;
@@ -83,26 +78,6 @@ impl PaddleBundle {
 }
 
 #[derive(Component)]
-struct Gutter;
-
-#[derive(Bundle)]
-struct GutterBundle {
-    gutter: Gutter,
-    shape: Shape,
-    position: Position,
-}
-
-impl GutterBundle {
-    fn new(x: f32, y: f32, w: f32) -> Self {
-        Self {
-            gutter: Gutter,
-            shape: Shape(Vec2::new(w, GUTTER_HEIGHT)),
-            position: Position(Vec2::new(x, y)),
-        }
-    }
-}
-
-#[derive(Component)]
 struct Position(Vec2);
 
 #[derive(Component)]
@@ -117,13 +92,6 @@ struct Player1;
 #[derive(Component)]
 struct Player2;
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-enum Collision {
-    Left,
-    Right,
-    Top,
-    Bottom,
-}
 
 pub struct PongPlugin;
 
@@ -131,10 +99,14 @@ impl Plugin for PongPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Score>()
             .add_event::<Scored>()
-            .add_systems(Startup, (spawn_ball, spawn_paddles, spawn_gutters, spawn_scoreboard))
+            .add_systems(
+                Startup,
+                (configure_gizmos, spawn_ball, spawn_paddles, spawn_scoreboard).chain(),
+            )
             .add_systems(
                 Update,
                 (
+                    draw_gizmos,
                     move_ball.before(move_paddles),
                     handle_player_input,
                     detect_scoring,
@@ -148,6 +120,37 @@ impl Plugin for PongPlugin {
                 ),
             );
     }
+}
+
+fn configure_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
+    let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
+    config.line_width = 10.0;
+}
+
+fn draw_dotted_line(gizmos: &mut Gizmos, start: Vec2, end: Vec2, color: Color, segment_length: f32, gap_length: f32) {
+    let direction = end - start;
+    let total_length = direction.length();
+    let mut current_length = 0.0;
+
+    while current_length < total_length {
+        let segment_end = current_length + segment_length;
+        let end_point = if segment_end < total_length {
+            start + direction.normalize() * segment_end
+        } else {
+            end
+        };
+        gizmos.line_2d(start + direction.normalize() * current_length, end_point, color);
+        current_length += segment_length + gap_length;
+    }
+}
+
+fn draw_gizmos(mut gizmos: Gizmos) {
+    let segment_length = 5.0;
+    let gap_length = 2.5;
+
+    draw_dotted_line(&mut gizmos, Vec2::new(0.0, GAME_HEIGHT/2.0), Vec2::new(0.0, -GAME_HEIGHT/2.0), Color::WHITE, segment_length, gap_length);
+    draw_dotted_line(&mut gizmos, Vec2::new(-GAME_WIDTH/2.0, GAME_HEIGHT/2.0), Vec2::new(GAME_WIDTH/2.0, GAME_HEIGHT/2.0), Color::WHITE, segment_length, gap_length);
+    draw_dotted_line(&mut gizmos, Vec2::new(-GAME_WIDTH/2.0, -GAME_HEIGHT/2.0), Vec2::new(GAME_WIDTH/2.0, -GAME_HEIGHT/2.0), Color::WHITE, segment_length, gap_length);
 }
 
 fn update_scoreboard(
@@ -303,47 +306,6 @@ fn handle_player_input(
     }
 }
 
-fn spawn_gutters(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    window: Query<&Window>,
-) {
-    if let Ok(window) = window.get_single() {
-        let window_width = window.resolution.width();
-        let window_height = window.resolution.height();
-
-        let top_gutter_y = window_height / 2. - GUTTER_HEIGHT / 2.;
-        let bottom_gutter_y = -window_height / 2. + GUTTER_HEIGHT / 2.;
-
-        let top_gutter = GutterBundle::new(0., top_gutter_y, window_width);
-        let bottom_gutter = GutterBundle::new(0., bottom_gutter_y, window_width);
-
-        let mesh = Mesh::from(Rectangle::from_size(top_gutter.shape.0));
-        let material = ColorMaterial::from(Color::rgb(0., 0., 0.));
-
-        let mesh_handle = meshes.add(mesh);
-        let material_handle = materials.add(material);
-
-        commands.spawn((
-            top_gutter,
-            MaterialMesh2dBundle {
-                mesh: mesh_handle.clone().into(),
-                material: material_handle.clone(),
-                ..default()
-            },
-        ));
-
-        commands.spawn((
-            bottom_gutter,
-            MaterialMesh2dBundle {
-                mesh: mesh_handle.into(),
-                material: material_handle.clone(),
-                ..default()
-            },
-        ));
-    }
-}
 
 fn project_positions(mut ball: Query<(&mut Transform, &Position)>) {
     for (mut transform, position) in &mut ball {
@@ -367,8 +329,6 @@ fn move_ball(
             velocity.0 += fluid.get_fluid_force_at(pos, vel);
             fluid.apply_ball_force(pos, vel);
         }
-        position.0 += velocity.0;
-
     }
 }
 
@@ -397,54 +357,44 @@ fn move_paddles(
     }
 }
 
-fn collide_with_side(ball: BoundingCircle, wall: Aabb2d) -> Option<Collision> {
-    if !ball.intersects(&wall) {
-        return None;
-    }
-
-    let closest = wall.closest_point(ball.center());
-    let offset = ball.center() - closest;
-    let side = if offset.x.abs() > offset.y.abs() {
-        if offset.x < 0. {
-            Collision::Left
-        } else {
-            Collision::Right
-        }
-    } else if offset.y > 0. {
-        Collision::Top
-    } else {
-        Collision::Bottom
-    };
-
-    Some(side)
-}
-
 fn handle_collisions(
-    mut ball: Query<(&mut Velocity, &Position, &Shape), With<Ball>>,
-    other_things: Query<(&Position, &Shape), Without<Ball>>,
+    mut ball: Query<(&mut Velocity, &mut Position, &Shape), With<Ball>>,
+    paddles: Query<(&Position, &Shape), (With<Paddle>, Without<Ball>)>,
 ) {
-    if let Ok((mut ball_velocity, ball_position, ball_shape)) = ball.get_single_mut() {
-        for (position, shape) in &other_things {
-            if let Some(collision) = collide_with_side(
-                BoundingCircle::new(ball_position.0, ball_shape.0.x),
-                Aabb2d::new(position.0, shape.0 / 2.),
-            ) {
-                match collision {
-                    Collision::Left => {
-                        ball_velocity.0.x *= -1.;
-                    }
-                    Collision::Right => {
-                        ball_velocity.0.x *= -1.;
-                    }
-                    Collision::Top => {
-                        ball_velocity.0.y *= -1.;
-                    }
-                    Collision::Bottom => {
-                        ball_velocity.0.y *= -1.;
-                    }
-                }
+    if let Ok((mut ball_velocity, mut ball_position, ball_shape)) = ball.get_single_mut() {
+        let bp = ball_position.0;
+        if bp.y > GAME_HEIGHT / 2.0 {
+            ball_velocity.0.y *= -1.0;
+            ball_position.0.y = GAME_HEIGHT / 2.0;
+        }
+        if bp.y < -GAME_HEIGHT / 2.0 {
+            ball_velocity.0.y *= -1.0;
+            ball_position.0.y = -GAME_HEIGHT / 2.0;
+        }
+
+        for (paddle_position, paddle_shape) in paddles.iter() {
+            let pp = paddle_position.0;
+            let ps = paddle_shape.0;
+            if pp.x < 0.0
+                && bp.x - BALL_SIZE < pp.x + ps.x / 2.0
+                && bp.x + BALL_SIZE > pp.x - ps.x
+                && bp.y < pp.y + ps.y / 2.0
+                && bp.y > pp.y - ps.y / 2.0
+            {
+                ball_velocity.0.x *= -1.0;
+                ball_position.0.x = pp.x + ps.x / 2.0 + BALL_SIZE;
+            }
+            if pp.x > 0.0
+                && bp.x + BALL_SIZE > pp.x - ps.x / 2.0
+                && bp.x - BALL_SIZE < pp.x + ps.x
+                && bp.y < pp.y + ps.y / 2.0
+                && bp.y > pp.y - ps.y / 2.0
+            {
+                ball_velocity.0.x *= -1.0;
+                ball_position.0.x = pp.x - ps.x / 2.0 - BALL_SIZE;
             }
         }
+        ball_position.0 += ball_velocity.0;
     }
 }
 
@@ -470,6 +420,10 @@ fn spawn_paddles(
             MaterialMesh2dBundle {
                 mesh: mesh_handle.clone().into(),
                 material: materials.add(ColorMaterial::from(Color::WHITE)),
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, 2.0), // z index?
+                    ..default()
+                },
                 ..default()
             },
         ));
@@ -499,6 +453,14 @@ fn spawn_ball(
 
     commands.spawn((
         BallBundle::new(1., 1.),
-        MaterialMesh2dBundle { mesh: mesh_handle.into(), material: material_handle, ..default() },
+        MaterialMesh2dBundle {
+            mesh: mesh_handle.into(),
+            material: material_handle,
+            transform: Transform {
+                translation: Vec3::new(0.0, 0.0, 1.0), // z index?
+                ..default()
+            },
+            ..default()
+        },
     ));
 }
