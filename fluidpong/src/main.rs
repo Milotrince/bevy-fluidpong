@@ -26,7 +26,14 @@ fn main() {
 
     let mut app = App::new();
     app.add_systems(Startup, (spawn_camera, resize_window));
-    app.add_plugins(DefaultPlugins);
+    app.add_plugins(DefaultPlugins
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "FluidPong".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }));
     app.insert_resource(ClearColor(Color::BLACK));
     if args.fluid == "sph" {
         app.add_plugins(sph::FluidPlugin {debug: args.debug});
