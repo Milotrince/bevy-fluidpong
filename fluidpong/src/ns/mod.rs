@@ -60,7 +60,7 @@ fn init_fluid(
         ("diffusion".to_string(), 10.0),
         ("interact_force".to_string(), 1000.0),
         ("interact_velocity".to_string(), 0.0),
-        ("diffusion".to_string(), 0.001),
+        ("dissipation".to_string(), 0.001),
     ]));
     let cells = fluid.get_cells();
 
