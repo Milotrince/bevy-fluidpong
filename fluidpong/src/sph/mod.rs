@@ -99,7 +99,9 @@ fn update_interactive(
     mut motion_er: EventReader<MouseMotion>,
     mut query: Query<&mut fluid::Fluid>,
     mut gizmos: Gizmos,
+    simvar_query: Query<&FluidSimVars>,
 ) {
+    let simvars = simvar_query.single();
     let (camera, camera_transform) = camera_query.single();
 
     let mut fluid = query.single_mut();
@@ -116,7 +118,7 @@ fn update_interactive(
 
                 let point = Vec2::new(world_position.x, world_position.y);
                 let force = Vec2::new(motion.delta.x, -motion.delta.y);
-                fluid.set_external_force(point, force * 30000.0, 10.0);
+                fluid.set_external_force(point, force * simvars.get("interact_force"), 10.0);
             }
         }
     }

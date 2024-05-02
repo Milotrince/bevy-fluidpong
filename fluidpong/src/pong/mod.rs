@@ -92,7 +92,6 @@ struct Player1;
 #[derive(Component)]
 struct Player2;
 
-
 pub struct PongPlugin;
 
 impl Plugin for PongPlugin {
@@ -127,7 +126,14 @@ fn configure_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     config.line_width = 10.0;
 }
 
-fn draw_dotted_line(gizmos: &mut Gizmos, start: Vec2, end: Vec2, color: Color, segment_length: f32, gap_length: f32) {
+fn draw_dotted_line(
+    gizmos: &mut Gizmos,
+    start: Vec2,
+    end: Vec2,
+    color: Color,
+    segment_length: f32,
+    gap_length: f32,
+) {
     let direction = end - start;
     let total_length = direction.length();
     let mut current_length = 0.0;
@@ -148,9 +154,30 @@ fn draw_gizmos(mut gizmos: Gizmos) {
     let segment_length = 5.0;
     let gap_length = 2.5;
 
-    draw_dotted_line(&mut gizmos, Vec2::new(0.0, GAME_HEIGHT/2.0), Vec2::new(0.0, -GAME_HEIGHT/2.0), Color::WHITE, segment_length, gap_length);
-    draw_dotted_line(&mut gizmos, Vec2::new(-GAME_WIDTH/2.0, GAME_HEIGHT/2.0), Vec2::new(GAME_WIDTH/2.0, GAME_HEIGHT/2.0), Color::WHITE, segment_length, gap_length);
-    draw_dotted_line(&mut gizmos, Vec2::new(-GAME_WIDTH/2.0, -GAME_HEIGHT/2.0), Vec2::new(GAME_WIDTH/2.0, -GAME_HEIGHT/2.0), Color::WHITE, segment_length, gap_length);
+    draw_dotted_line(
+        &mut gizmos,
+        Vec2::new(0.0, GAME_HEIGHT / 2.0),
+        Vec2::new(0.0, -GAME_HEIGHT / 2.0),
+        Color::WHITE,
+        segment_length,
+        gap_length,
+    );
+    draw_dotted_line(
+        &mut gizmos,
+        Vec2::new(-GAME_WIDTH / 2.0, GAME_HEIGHT / 2.0),
+        Vec2::new(GAME_WIDTH / 2.0, GAME_HEIGHT / 2.0),
+        Color::WHITE,
+        segment_length,
+        gap_length,
+    );
+    draw_dotted_line(
+        &mut gizmos,
+        Vec2::new(-GAME_WIDTH / 2.0, -GAME_HEIGHT / 2.0),
+        Vec2::new(GAME_WIDTH / 2.0, -GAME_HEIGHT / 2.0),
+        Color::WHITE,
+        segment_length,
+        gap_length,
+    );
 }
 
 fn update_scoreboard(
@@ -179,7 +206,7 @@ fn spawn_scoreboard(mut commands: Commands) {
         .with_style(Style {
             position_type: PositionType::Absolute,
             top: Val::Px(5.0),
-            right: Val::Px(15.0),
+            right: Val::Px(SCREEN_WIDTH / 2.0 * 0.8),
             ..default()
         }),
         Player1Score,
@@ -194,7 +221,7 @@ fn spawn_scoreboard(mut commands: Commands) {
         .with_style(Style {
             position_type: PositionType::Absolute,
             top: Val::Px(5.0),
-            left: Val::Px(15.0),
+            left: Val::Px(SCREEN_WIDTH / 2.0 * 0.8),
             ..default()
         }),
         Player2Score,
@@ -210,20 +237,12 @@ fn update_score(mut score: ResMut<Score>, mut events: EventReader<Scored>) {
     }
 }
 
-fn detect_scoring(
-    mut ball: Query<&mut Position, With<Ball>>,
-    window: Query<&Window>,
-    mut events: EventWriter<Scored>,
-) {
-    if let Ok(window) = window.get_single() {
-        let window_width = window.resolution.width();
-
-        if let Ok(ball) = ball.get_single_mut() {
-            if ball.0.x > window_width / 2. {
-                events.send(Scored(Scorer::Player2));
-            } else if ball.0.x < -window_width / 2. {
-                events.send(Scored(Scorer::Player1));
-            }
+fn detect_scoring(mut ball: Query<&mut Position, With<Ball>>, mut events: EventWriter<Scored>) {
+    if let Ok(ball) = ball.get_single_mut() {
+        if ball.0.x > GAME_WIDTH / 2. {
+            events.send(Scored(Scorer::Player2));
+        } else if ball.0.x < -GAME_WIDTH / 2. {
+            events.send(Scored(Scorer::Player1));
         }
     }
 }
@@ -306,7 +325,6 @@ fn handle_player_input(
     }
 }
 
-
 fn project_positions(mut ball: Query<(&mut Transform, &Position)>) {
     for (mut transform, position) in &mut ball {
         transform.translation = position.0.extend(0.);
@@ -334,24 +352,19 @@ fn move_ball(
 
 fn move_paddles(
     mut paddle: Query<(&mut Position, &Velocity), With<Paddle>>,
-    window: Query<&Window>,
     mut sphfluid_query: Query<&mut crate::sph::fluid::Fluid>,
     mut nsfluid_query: Query<&mut crate::ns::fluid::Fluid>,
 ) {
-    if let Ok(window) = window.get_single() {
-        let window_height = window.resolution.height();
-
-        for (mut position, velocity) in &mut paddle {
-            let vel = velocity.0 * PADDLE_SPEED;
-            let new_position = position.0 + vel;
-            if new_position.y.abs() < window_height / 2. - GUTTER_HEIGHT - PADDLE_HEIGHT / 2. {
-                position.0 = new_position;
-                if let Ok(mut fluid) = sphfluid_query.get_single_mut() {
-                    fluid.apply_paddle_force(position.0, vel);
-                }
-                if let Ok(mut fluid) = nsfluid_query.get_single_mut() {
-                    fluid.apply_paddle_force(position.0, vel);
-                }
+    for (mut position, velocity) in &mut paddle {
+        let vel = velocity.0 * PADDLE_SPEED;
+        let new_position = position.0 + vel;
+        if new_position.y.abs() < GAME_HEIGHT / 2. - PADDLE_HEIGHT / 2. {
+            position.0 = new_position;
+            if let Ok(mut fluid) = sphfluid_query.get_single_mut() {
+                fluid.apply_paddle_force(position.0, vel);
+            }
+            if let Ok(mut fluid) = nsfluid_query.get_single_mut() {
+                fluid.apply_paddle_force(position.0, vel);
             }
         }
     }

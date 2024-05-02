@@ -74,6 +74,7 @@ fn sph_setup(commands: Commands) {
         SimVariable::new("visc_const", 300.0),
         SimVariable::new("bound_damping", 0.5),
         SimVariable::new("gravity", 1.0),
+        SimVariable::new("interact_force", 3000.0),
     ];
     setup(commands, simvars);
 }
