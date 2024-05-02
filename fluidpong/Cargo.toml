@@ -9,6 +9,7 @@ edition = "2021"
 bevy = "0.13"
 clap = { version = "4.5.4", features = ["derive"] }
 enum_dispatch = "0.3.13"
+rayon = "1.10.0"
 
 [profile.dev.package."*"]
 opt-level = 3

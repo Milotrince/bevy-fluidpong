@@ -3,6 +3,7 @@ use std::ops::Mul;
 
 use bevy::ecs::component::Component;
 use bevy::math::{Vec2, Vec4};
+use rayon::prelude::*;
 
 use crate::sph::kernel::{Kernel, KernelFunction, Poly6Kernel, SpikyKernel, ViscosityKernel};
 use crate::sph::particle::Particle;
@@ -35,8 +36,8 @@ impl Fluid {
         let dy = WALL_Y * 2.0 / NUM_PARTICLES_Y as f32;
         for i in 0..NUM_PARTICLES_X {
             for j in 0..NUM_PARTICLES_Y {
-                let x = - WALL_X*0.9 + i as f32 * dx*0.9;
-                let y = - WALL_Y*0.9 + j as f32 * dy*0.9;
+                let x = -WALL_X * 0.9 + i as f32 * dx * 0.9;
+                let y = -WALL_Y * 0.9 + j as f32 * dy * 0.9;
                 particles.insert(Particle::new(Vec2::new(x, y), particle_mass));
             }
         }
@@ -47,15 +48,15 @@ impl Fluid {
             viscosity_kernel: ViscosityKernel::new(kernel_radius).into(),
         }
     }
-    
+
     pub fn reset(&mut self, kernel_radius: f32, particle_mass: f32) {
         let mut particles = SpatialGrid2D::new(kernel_radius);
         let dx = WALL_X * 2.0 / NUM_PARTICLES_X as f32;
         let dy = WALL_Y * 2.0 / NUM_PARTICLES_Y as f32;
         for i in 0..NUM_PARTICLES_X {
             for j in 0..NUM_PARTICLES_Y {
-                let x = - WALL_X*0.9 + i as f32 * dx*0.9;
-                let y = - WALL_Y*0.9 + j as f32 * dy*0.9;
+                let x = -WALL_X * 0.9 + i as f32 * dx * 0.9;
+                let y = -WALL_Y * 0.9 + j as f32 * dy * 0.9;
                 particles.insert(Particle::new(Vec2::new(x, y), particle_mass));
             }
         }
@@ -101,16 +102,16 @@ impl Fluid {
     /// state of the simulation.
     pub fn compute_density_pressure(&mut self, gas_const: f32, rest_dens: f32) {
         // First, set densities to 1 so we can cancel it in the interpolation
-        for pi in self.particles.iter_mut() {
+        self.particles.iter_mut().par_bridge().for_each(|pi| {
             pi.density = 1.0;
-        }
+        });
 
         // FIXME: Can we avoid this clone?
         let mut new_particles = self.particles.clone();
-        for pi in new_particles.iter_mut() {
+        new_particles.iter_mut().par_bridge().for_each(|pi| {
             pi.density = self.interpolate(pi.position, &self.density_kernel, |pj| pj.mass);
             pi.pressure = gas_const * (pi.density - rest_dens);
-        }
+        });
 
         self.particles = new_particles;
     }
@@ -121,7 +122,7 @@ impl Fluid {
         // FIXME: Can we avoid this clone?
         let mut new_particles = self.particles.clone();
 
-        for pi in new_particles.iter_mut() {
+        new_particles.iter_mut().par_bridge().for_each(|pi| {
             // Define the extraction functions for interpolating pressure and viscosity
             let ext_press = |pj: &Particle| -pj.mass * (pi.pressure + pj.pressure) / 2.0;
             let ext_visc = |pj: &Particle| visc_const * pj.mass * (pj.velocity - pi.velocity);
@@ -131,7 +132,7 @@ impl Fluid {
             let fi_visc = self.interpolate_lapl(pi.position, &self.viscosity_kernel, ext_visc);
             let fi_gravity = Vec2::new(0.0, -gravity) * pi.mass;
             pi.force = fi_press + fi_visc + fi_gravity + pi.ext_force;
-        }
+        });
 
         self.particles = new_particles;
     }
@@ -140,7 +141,7 @@ impl Fluid {
     pub fn integrate(&mut self, dt: f32, bound_damping: f32) {
         let mut new_particles = self.particles.clone();
 
-        for pi in new_particles.iter_mut() {
+        new_particles.iter_mut().par_bridge().for_each(|pi| {
             // Euler
             pi.velocity += dt * pi.force / pi.density;
             pi.position += dt * pi.velocity;
@@ -161,7 +162,7 @@ impl Fluid {
                 pi.velocity.y *= -bound_damping;
                 pi.position.y = WALL_Y - EPS;
             }
-        }
+        });
 
         new_particles.recompute();
         self.particles = new_particles;
@@ -222,5 +223,4 @@ impl Fluid {
         }
         balls
     }
-
 }
