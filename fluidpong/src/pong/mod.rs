@@ -1,12 +1,12 @@
 pub mod pongfluid;
 
+use bevy::prelude::*;
+use bevy::sprite::MaterialMesh2dBundle;
 use pongfluid::PongFluid;
-
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 
 use crate::{GAME_HEIGHT, GAME_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 
-const BALL_INITIAL_SPEED: f32 = 6.;
+const BALL_INITIAL_SPEED: f32 = 3.;
 const BALL_SIZE: f32 = 5.;
 const PADDLE_SPEED: f32 = 6.;
 const PADDLE_WIDTH: f32 = 10.;
